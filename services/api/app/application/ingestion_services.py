@@ -25,6 +25,8 @@ from services.api.app.domain import (
     Brief,
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
+    BriefIngestionSourceAssetRelationType,
     BriefIngestionSourceType,
     BriefIngestionStatus,
     BriefSourceType,
@@ -36,17 +38,27 @@ from services.api.app.domain import (
     ProjectStatus,
     RequirementIssue,
     RequirementIssueStatus,
+    SourceAssetStatus,
     WorkspaceStatus,
 )
 from services.api.app.domain.brief_issues import detect_requirement_issues
 
 SOURCE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+MAX_SOURCE_ATTACHMENTS = 10
+
+
+@dataclass(frozen=True, slots=True)
+class BriefSourceAttachmentInput:
+    source_asset_id: UUID
+    source_asset_version_id: UUID
+    relation_type: BriefIngestionSourceAssetRelationType
 
 
 @dataclass(frozen=True, slots=True)
 class IngestionResult:
     ingestion: BriefIngestion
     bundle: BriefBundle
+    source_attachments: list[BriefIngestionSourceAsset]
     replayed: bool
 
 
@@ -73,6 +85,7 @@ class BriefIngestionApplicationService:
         source_type: BriefIngestionSourceType,
         source_reference: str | None,
         change_summary: str,
+        source_attachments: list[BriefSourceAttachmentInput] | None = None,
     ) -> IngestionResult:
         self._validate_text_bounds(title, change_summary)
         now = self.clock()
@@ -86,6 +99,7 @@ class BriefIngestionApplicationService:
                     "source_type": source_type.value,
                     "source_reference": source_reference,
                     "change_summary": change_summary,
+                    "source_attachments": self._attachment_digest(source_attachments or []),
                 },
             )
             replay = self._reserve_or_replay(
@@ -103,6 +117,9 @@ class BriefIngestionApplicationService:
                 return replay
             ingestion = self._require_reservation(
                 uow, context, project_id, BriefIngestionOperation.CREATE_BRIEF, idempotency_key
+            )
+            attachments = self._validate_attachments(
+                uow, context, project_id, source_attachments or []
             )
             brief_id, version_id = self.id_factory(), self.id_factory()
             brief = Brief(
@@ -141,6 +158,7 @@ class BriefIngestionApplicationService:
                 completed_at=now,
                 expected_version=1,
             )
+            saved_attachments = self._attach_sources(uow, context, accepted, attachments, now)
             uow.audit_events.append(
                 self._audit(
                     context,
@@ -152,7 +170,13 @@ class BriefIngestionApplicationService:
                     now,
                 )
             )
-            return IngestionResult(accepted, BriefBundle(saved_brief, saved_version, issues), False)
+            if saved_attachments:
+                uow.audit_events.append(
+                    self._attachment_audit(context, accepted, saved_attachments, now)
+                )
+            return IngestionResult(
+                accepted, BriefBundle(saved_brief, saved_version, issues), saved_attachments, False
+            )
 
     def create_version(
         self,
@@ -168,6 +192,7 @@ class BriefIngestionApplicationService:
         source_type: BriefIngestionSourceType,
         source_reference: str | None,
         change_summary: str,
+        source_attachments: list[BriefSourceAttachmentInput] | None = None,
     ) -> IngestionResult:
         self._validate_text_bounds(None, change_summary)
         now = self.clock()
@@ -185,6 +210,7 @@ class BriefIngestionApplicationService:
                     "source_type": source_type.value,
                     "source_reference": source_reference,
                     "change_summary": change_summary,
+                    "source_attachments": self._attachment_digest(source_attachments or []),
                 },
             )
             replay = self._reserve_or_replay(
@@ -202,6 +228,9 @@ class BriefIngestionApplicationService:
                 return replay
             ingestion = self._require_reservation(
                 uow, context, project_id, BriefIngestionOperation.CREATE_VERSION, idempotency_key
+            )
+            attachments = self._validate_attachments(
+                uow, context, project_id, source_attachments or []
             )
             if source_version_id != visible_brief.current_version_id:
                 raise ResourceConflict(
@@ -242,6 +271,7 @@ class BriefIngestionApplicationService:
                 completed_at=now,
                 expected_version=1,
             )
+            saved_attachments = self._attach_sources(uow, context, accepted, attachments, now)
             uow.audit_events.append(
                 self._audit(
                     context,
@@ -253,7 +283,13 @@ class BriefIngestionApplicationService:
                     now,
                 )
             )
-            return IngestionResult(accepted, BriefBundle(saved_brief, saved_version, issues), False)
+            if saved_attachments:
+                uow.audit_events.append(
+                    self._attachment_audit(context, accepted, saved_attachments, now)
+                )
+            return IngestionResult(
+                accepted, BriefBundle(saved_brief, saved_version, issues), saved_attachments, False
+            )
 
     def get(self, context: TenantContext, project_id: UUID, ingestion_id: UUID) -> IngestionResult:
         with self.uow_factory() as uow:
@@ -330,7 +366,12 @@ class BriefIngestionApplicationService:
             brief.id,
             version.id,
         )
-        return IngestionResult(ingestion, BriefBundle(brief, version, issues), replayed)
+        attachments = uow.brief_ingestion_source_assets.list_for_ingestion(
+            context.organization_id, context.workspace_id, ingestion.project_id, ingestion.id
+        )
+        return IngestionResult(
+            ingestion, BriefBundle(brief, version, issues), attachments, replayed
+        )
 
     def _prepare_digest(
         self,
@@ -471,6 +512,77 @@ class BriefIngestionApplicationService:
             )
         return result
 
+    def _validate_attachments(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        project_id: UUID,
+        attachments: list[BriefSourceAttachmentInput],
+    ) -> list[BriefSourceAttachmentInput]:
+        if len(attachments) > MAX_SOURCE_ATTACHMENTS:
+            raise InvalidRequest("source_attachments exceeds the allowed count")
+        seen: set[tuple[UUID, UUID, str]] = set()
+        for attachment in attachments:
+            key = (
+                attachment.source_asset_id,
+                attachment.source_asset_version_id,
+                attachment.relation_type.value,
+            )
+            if key in seen:
+                raise InvalidRequest("source_attachments contains a duplicate")
+            seen.add(key)
+            asset = uow.source_assets.get(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                attachment.source_asset_id,
+            )
+            version = uow.source_asset_versions.get(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                attachment.source_asset_id,
+                attachment.source_asset_version_id,
+            )
+            if asset is None or version is None:
+                raise ResourceNotFound("source attachment is not accessible")
+            if asset.status is not SourceAssetStatus.ACTIVE:
+                raise ResourceConflict(
+                    "archived source assets cannot be attached", code="source_asset_archived"
+                )
+        return attachments
+
+    def _attach_sources(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        ingestion: BriefIngestion,
+        attachments: list[BriefSourceAttachmentInput],
+        now: datetime,
+    ) -> list[BriefIngestionSourceAsset]:
+        if ingestion.status is not BriefIngestionStatus.ACCEPTED:
+            raise ResourceConflict("source attachments require an accepted ingestion")
+        result = []
+        for position, item in enumerate(attachments):
+            result.append(
+                uow.brief_ingestion_source_assets.add_for_accepted_ingestion(
+                    BriefIngestionSourceAsset(
+                        self.id_factory(),
+                        context.organization_id,
+                        context.workspace_id,
+                        ingestion.project_id,
+                        ingestion.id,
+                        item.source_asset_id,
+                        item.source_asset_version_id,
+                        item.relation_type,
+                        position,
+                        context.actor_subject,
+                        now,
+                    )
+                )
+            )
+        return result
+
     def _audit(
         self,
         context: TenantContext,
@@ -501,6 +613,52 @@ class BriefIngestionApplicationService:
             now,
             context.correlation_id,
         )
+
+    def _attachment_audit(
+        self,
+        context: TenantContext,
+        ingestion: BriefIngestion,
+        attachments: list[BriefIngestionSourceAsset],
+        now: datetime,
+    ) -> AuditEvent:
+        relation_counts = {
+            relation.value: sum(
+                1 for item in attachments if item.relation_type.value == relation.value
+            )
+            for relation in BriefIngestionSourceAssetRelationType
+        }
+        return AuditEvent(
+            self.id_factory(),
+            context.organization_id,
+            context.workspace_id,
+            context.actor_subject,
+            "brief_ingestion",
+            ingestion.id,
+            "brief_ingestion.source_attached",
+            {
+                "ingestion_id": str(ingestion.id),
+                "attachment_count": len(attachments),
+                "relation_type_counts": relation_counts,
+                "source_asset_version_count": len(
+                    {item.source_asset_version_id for item in attachments}
+                ),
+            },
+            now,
+            context.correlation_id,
+        )
+
+    @staticmethod
+    def _attachment_digest(
+        attachments: list[BriefSourceAttachmentInput],
+    ) -> list[dict[str, str]]:
+        return [
+            {
+                "source_asset_id": str(item.source_asset_id),
+                "source_asset_version_id": str(item.source_asset_version_id),
+                "relation_type": item.relation_type.value,
+            }
+            for item in attachments
+        ]
 
     def _require_reservation(
         self,

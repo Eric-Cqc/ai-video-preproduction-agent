@@ -61,7 +61,9 @@ def _truncate(engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE brief_ingestions, requirement_issues, brief_versions, "
-                "briefs, audit_events, projects, memberships, workspaces, organizations CASCADE"
+                "TRUNCATE TABLE brief_ingestion_source_assets, source_asset_operations, "
+                "source_asset_versions, source_assets, brief_ingestions, requirement_issues, "
+                "brief_versions, briefs, audit_events, projects, memberships, workspaces, "
+                "organizations CASCADE"
             )
         )

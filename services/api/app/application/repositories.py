@@ -7,12 +7,17 @@ from services.api.app.domain import (
     Brief,
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
     BriefVersion,
     Membership,
     Organization,
     Project,
     RequirementIssue,
     RequirementIssueStatus,
+    SourceAsset,
+    SourceAssetOperation,
+    SourceAssetOperationType,
+    SourceAssetVersion,
     Workspace,
 )
 
@@ -102,6 +107,16 @@ class BriefIngestionRepository(Protocol):
     ) -> BriefIngestion | None: ...
 
 
+class BriefIngestionSourceAssetRepository(Protocol):
+    def add_for_accepted_ingestion(
+        self, attachment: BriefIngestionSourceAsset
+    ) -> BriefIngestionSourceAsset: ...
+
+    def list_for_ingestion(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_ingestion_id: UUID
+    ) -> list[BriefIngestionSourceAsset]: ...
+
+
 class BriefVersionRepository(Protocol):
     def add(self, version: BriefVersion) -> BriefVersion: ...
 
@@ -123,6 +138,93 @@ class BriefVersionRepository(Protocol):
     def approve(self, version: BriefVersion) -> BriefVersion: ...
 
     def supersede(self, version: BriefVersion) -> BriefVersion: ...
+
+
+class SourceAssetRepository(Protocol):
+    def add(self, asset: SourceAsset) -> SourceAsset: ...
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, source_asset_id: UUID
+    ) -> SourceAsset | None: ...
+
+    def list(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[SourceAsset]: ...
+
+    def compare_and_move_pointer(
+        self,
+        asset: SourceAsset,
+        *,
+        expected_version: int,
+        expected_current_version_id: UUID,
+    ) -> SourceAsset: ...
+
+    def compare_and_archive(
+        self,
+        asset: SourceAsset,
+        *,
+        expected_version: int,
+        expected_current_version_id: UUID,
+    ) -> SourceAsset: ...
+
+
+class SourceAssetVersionRepository(Protocol):
+    def add(self, version: SourceAssetVersion) -> SourceAssetVersion: ...
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        version_id: UUID,
+    ) -> SourceAssetVersion | None: ...
+
+    def list_for_asset(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, source_asset_id: UUID
+    ) -> list[SourceAssetVersion]: ...
+
+    def find_declared_duplicate_within_project(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        checksum_algorithm: str,
+        checksum_value: str,
+        byte_size: int,
+        media_type: str,
+        exclude_source_asset_id: UUID | None = None,
+    ) -> int: ...
+
+
+class SourceAssetOperationRepository(Protocol):
+    def reserve(self, operation: SourceAssetOperation) -> SourceAssetOperation | None: ...
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: SourceAssetOperationType,
+        idempotency_key: str,
+    ) -> SourceAssetOperation | None: ...
+
+    def finalize_accepted(
+        self,
+        operation: SourceAssetOperation,
+        *,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> SourceAssetOperation: ...
 
 
 class RequirementIssueRepository(Protocol):

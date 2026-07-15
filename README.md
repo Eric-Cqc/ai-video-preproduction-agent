@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds controlled ingestion of already structured Brief JSON; it does not upload or parse files, fetch URLs, use AI, generate prompts, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds controlled SourceAsset metadata intake and ordered references from Structured Brief ingestion; it does not upload, store, read or parse files, fetch URLs, use AI, generate prompts, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -10,17 +10,27 @@ This repository contains the executable foundation for an **AI video preproducti
 - Tenant-scoped repositories, one application Unit of Work, atomic mutation/audit writes, and Project optimistic concurrency.
 - Canonical Structured Brief v1 JSON Schema, immutable BriefVersion snapshots, deterministic requirement issues, explicit review/approval, and Brief optimistic concurrency.
 - Project-scoped structured ingestion with canonical validation, stable serialization/SHA-256 digest, PostgreSQL idempotency, replay and atomic audit.
+- Tenant/Project-scoped SourceAsset metadata aggregates with immutable versions, declared SHA-256/byte-size metadata, PostgreSQL idempotency, CAS and bounded duplicate indication.
+- Ordered immutable SourceAssetVersion references on accepted Brief ingestion; the order and relation type are part of the canonical ingestion digest.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
-There is no file upload or parsing, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+There is no file upload, object storage, byte read, checksum verification, MIME sniffing, parsing, OCR, URL retrieval, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
 
 ## Controlled structured ingestion
 
 The API supports `create_brief` and `create_version` only for pre-structured canonical Brief JSON. Each mutation requires an 8–128-character printable ASCII `Idempotency-Key`, scoped to Organization, Workspace, Project and operation. The server validates the canonical schema, deterministically serializes result-affecting input, and computes SHA-256. A matching accepted request replays with 200 and no new audit; a different digest returns 409. `reserved` exists only within the winning database transaction and is never returned.
 
-`source_reference` is a bounded opaque identifier, not a path, URL, database URL, credential or Authorization-like value. HTTP bodies remain capped at 256 KiB and canonical content at 128 KiB. PostgreSQL statement timeout defaults to 5000ms, bounding stalled unique-key waits; timeout rollback leaves no reservation.
+Brief `source_reference` is a bounded opaque identifier. SourceAsset provenance values are bounded declared metadata: paths, database URLs, credentials, Authorization-like strings, signed URLs and control characters are rejected, and no accepted reference is fetched. HTTP bodies remain capped at 256 KiB and canonical content at 128 KiB. PostgreSQL statement timeout defaults to 5000ms, bounding stalled unique-key waits; timeout rollback leaves no reservation.
+
+## Controlled source-asset metadata intake
+
+`SourceAsset` is a stable identity with `active`/`archived` lifecycle and a CAS-protected current pointer. Every replacement inserts a complete immutable `SourceAssetVersion`; no endpoint edits a version or predecessor. Metadata allows only the documented document media types and a declared size from 1 byte through 100 MiB. The only checksum syntax is lowercase SHA-256; because no bytes enter the system, neither checksum nor byte size is independently verified.
+
+Duplicate indication is limited to equal declared checksum, media type and byte size within the same Organization, Workspace and Project. It never merges assets. Source mutations use the same PostgreSQL `reserved → accepted` transaction pattern as Brief ingestion: accepted replay is resolved before current-pointer CAS and creates no additional version or audit record.
+
+Structured Brief ingestion accepts at most ten `source_attachments`. Each item names a scoped SourceAsset and immutable SourceAssetVersion plus `primary_source`, `supporting_source`, or `reference`; its array order becomes a zero-based immutable position and is included in the request digest. Attachments insert only after the ingestion is conditionally finalized as accepted, in the same UoW transaction as the Brief mutation and audit. Replay returns the committed attachment list without revalidating a later archive state or inserting duplicates.
 
 ## Repository layout
 
@@ -124,6 +134,8 @@ Protected resources use opaque 404 behavior. A Project/Brief/Version ID alone is
 - `POST/GET .../projects/{project_id}/briefs`
 - `GET .../briefs/{brief_id}` and `POST/GET .../versions`
 - explicit `submit`, `approve`, `archive`, issue create/resolve/dismiss, and Brief audit reads
+- `POST/GET .../projects/{project_id}/source-assets`
+- `GET .../source-assets/{source_asset_id}`, `POST/GET .../versions`, and explicit `POST .../archive`
 
 Project PATCH only accepts `name`, `description`, and `expected_version`. Status changes use explicit lifecycle endpoints. Stale versions, invalid lifecycle changes, and slug conflicts return 409. Errors use `{error: {code, message, correlation_id}}` and never expose raw SQL or stack traces.
 
@@ -171,6 +183,6 @@ The checked-in values are local test credentials only. Production requires an ex
 
 ## Architecture and milestone status
 
-The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation; ADR-022 through ADR-026 record controlled structured ingestion. The execution records are [versioned-brief-foundation-plan.md](docs/development/plans/versioned-brief-foundation-plan.md) and [structured-brief-ingestion-plan.md](docs/development/plans/structured-brief-ingestion-plan.md).
+The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation; ADR-022 through ADR-026 record controlled structured ingestion; ADR-027 through ADR-031 record controlled SourceAsset metadata intake and Brief attachment. The execution records include [source-asset-intake-plan.md](docs/development/plans/source-asset-intake-plan.md).
 
-The next intended milestone is a separately reviewed authorization and operational-hardening decision for this synchronous structured ingress. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; file parsing, uploads, URL retrieval, OCR, AI or background processing require their own reviewed scope and ADR.
+The next intended milestone is a separately reviewed authorization and operational-hardening decision for synchronous structured ingress and metadata intake. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; byte acceptance, checksum verification, uploads, storage, parsing, URL retrieval, OCR, AI or background processing each require their own reviewed scope and ADR.

@@ -36,6 +36,45 @@ def _payload(title: str = "Imported Brief") -> dict[str, Any]:
     }
 
 
+def _source_asset_path(organization_id: str, workspace_id: str, project_id: str) -> str:
+    return (
+        f"/api/v1/organizations/{organization_id}/workspaces/{workspace_id}"
+        f"/projects/{project_id}/source-assets"
+    )
+
+
+def _create_source_asset(
+    client: TestClient,
+    organization_id: str,
+    workspace_id: str,
+    project_id: str,
+    *,
+    key: str,
+    checksum: str = "a" * 64,
+) -> tuple[str, str]:
+    request_headers = headers("actor:owner", organization_id, workspace_id)
+    request_headers["Idempotency-Key"] = key
+    response = client.post(
+        _source_asset_path(organization_id, workspace_id, project_id),
+        headers=request_headers,
+        json={
+            "display_name": "Creative Source",
+            "original_filename": f"{key}.pdf",
+            "media_type": "application/pdf",
+            "byte_size": 1024,
+            "checksum_algorithm": "sha256",
+            "checksum_value": checksum,
+            "source_type": "api_declared",
+            "source_reference": None,
+            "external_record_id": None,
+            "declared_created_at": None,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    return body["source_asset"]["id"], body["current_version"]["id"]
+
+
 def test_create_replay_conflict_and_scoped_get(ingestion_client: TestClient) -> None:
     organization_id, workspace_id, project_id = bootstrap(ingestion_client, "ingestion-org")
     request_headers = headers("actor:owner", organization_id, workspace_id)
@@ -73,6 +112,7 @@ def test_create_replay_conflict_and_scoped_get(ingestion_client: TestClient) -> 
     fetched = ingestion_client.get(f"{path}/{body['ingestion_id']}", headers=request_headers)
     assert fetched.status_code == 200
     assert fetched.json()["ingestion_id"] == body["ingestion_id"]
+    assert fetched.json()["source_attachments"] == []
 
     other_organization, other_workspace, other_project = bootstrap(
         ingestion_client, "other-ingestion-org"
@@ -82,6 +122,135 @@ def test_create_replay_conflict_and_scoped_get(ingestion_client: TestClient) -> 
         headers=headers("actor:owner", other_organization, other_workspace),
     )
     assert hidden.status_code == 404
+
+
+def test_create_brief_ingestion_with_ordered_source_attachments(
+    ingestion_client: TestClient,
+) -> None:
+    organization_id, workspace_id, project_id = bootstrap(ingestion_client, "attached-ingestion")
+    asset_a, version_a = _create_source_asset(
+        ingestion_client, organization_id, workspace_id, project_id, key="source-a-key"
+    )
+    asset_b, version_b = _create_source_asset(
+        ingestion_client,
+        organization_id,
+        workspace_id,
+        project_id,
+        key="source-b-key",
+        checksum="b" * 64,
+    )
+    request_headers = headers("actor:owner", organization_id, workspace_id)
+    request_headers["Idempotency-Key"] = "attached-ingestion-key"
+    path = _path(organization_id, workspace_id, project_id)
+    payload = {
+        **_payload(),
+        "source_attachments": [
+            {
+                "source_asset_id": asset_a,
+                "source_asset_version_id": version_a,
+                "relation_type": "primary_source",
+            },
+            {
+                "source_asset_id": asset_b,
+                "source_asset_version_id": version_b,
+                "relation_type": "supporting_source",
+            },
+        ],
+    }
+
+    created = ingestion_client.post(path, headers=request_headers, json=payload)
+    assert created.status_code == 201, created.text
+    attachments = created.json()["source_attachments"]
+    assert [item["position"] for item in attachments] == [0, 1]
+    assert [item["source_asset_version_id"] for item in attachments] == [version_a, version_b]
+
+    replay = ingestion_client.post(path, headers=request_headers, json=payload)
+    assert replay.status_code == 200
+    assert replay.json()["source_attachments"] == attachments
+
+    reordered = {**payload, "source_attachments": list(reversed(payload["source_attachments"]))}
+    conflict = ingestion_client.post(path, headers=request_headers, json=reordered)
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    changed_relation = {
+        **payload,
+        "source_attachments": [
+            {
+                **payload["source_attachments"][0],
+                "relation_type": "reference",
+            },
+            payload["source_attachments"][1],
+        ],
+    }
+    relation_conflict = ingestion_client.post(path, headers=request_headers, json=changed_relation)
+    assert relation_conflict.status_code == 409
+    assert relation_conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    removed_attachment = {**payload, "source_attachments": payload["source_attachments"][:1]}
+    removal_conflict = ingestion_client.post(path, headers=request_headers, json=removed_attachment)
+    assert removal_conflict.status_code == 409
+    assert removal_conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    fetched = ingestion_client.get(
+        f"{path}/{created.json()['ingestion_id']}",
+        headers=headers("actor:owner", organization_id, workspace_id),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["source_attachments"] == attachments
+
+
+def test_ingestion_attachment_validation_rolls_back_mutation(
+    ingestion_client: TestClient,
+) -> None:
+    organization_id, workspace_id, project_id = bootstrap(ingestion_client, "bad-attachment")
+    asset_id, version_id = _create_source_asset(
+        ingestion_client, organization_id, workspace_id, project_id, key="bad-source-key"
+    )
+    other_org, other_workspace, other_project = bootstrap(ingestion_client, "bad-other")
+    other_asset, other_version = _create_source_asset(
+        ingestion_client, other_org, other_workspace, other_project, key="bad-other-source"
+    )
+    request_headers = headers("actor:owner", organization_id, workspace_id)
+    request_headers["Idempotency-Key"] = "bad-attachment-key"
+    path = _path(organization_id, workspace_id, project_id)
+
+    inaccessible = ingestion_client.post(
+        path,
+        headers=request_headers,
+        json={
+            **_payload(),
+            "source_attachments": [
+                {
+                    "source_asset_id": other_asset,
+                    "source_asset_version_id": other_version,
+                    "relation_type": "primary_source",
+                }
+            ],
+        },
+    )
+    assert inaccessible.status_code == 404
+
+    created = ingestion_client.post(
+        path,
+        headers={**request_headers, "Idempotency-Key": "good-attachment-key"},
+        json={
+            **_payload(),
+            "source_attachments": [
+                {
+                    "source_asset_id": asset_id,
+                    "source_asset_version_id": version_id,
+                    "relation_type": "primary_source",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201
+    briefs = ingestion_client.get(
+        f"/api/v1/organizations/{organization_id}/workspaces/{workspace_id}/projects/{project_id}/briefs",
+        headers=headers("actor:owner", organization_id, workspace_id),
+    ).json()["items"]
+    assert len(briefs) == 1
 
 
 @pytest.mark.parametrize("key", [None, "short", "has space key", " padded-key-0001"])

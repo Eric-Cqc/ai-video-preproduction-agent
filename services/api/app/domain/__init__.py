@@ -18,11 +18,14 @@ from services.api.app.domain.errors import (
     InvalidBriefTransition,
     InvalidProjectMutation,
     InvalidProjectTransition,
+    InvalidSourceAssetMutation,
     VersionConflict,
 )
 from services.api.app.domain.ingestion import (
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
+    BriefIngestionSourceAssetRelationType,
     BriefIngestionSourceType,
     BriefIngestionStatus,
 )
@@ -38,6 +41,18 @@ from services.api.app.domain.models import (
     Workspace,
     WorkspaceStatus,
 )
+from services.api.app.domain.source_asset import (
+    MAX_DECLARED_BYTE_SIZE,
+    SOURCE_ASSET_METADATA_SCHEMA_VERSION,
+    SourceAsset,
+    SourceAssetMediaType,
+    SourceAssetOperation,
+    SourceAssetOperationStatus,
+    SourceAssetOperationType,
+    SourceAssetSourceType,
+    SourceAssetStatus,
+    SourceAssetVersion,
+)
 
 __all__ = [
     "ApprovalBlocked",
@@ -49,6 +64,8 @@ __all__ = [
     "BriefVersionLifecycle",
     "BriefIngestion",
     "BriefIngestionOperation",
+    "BriefIngestionSourceAsset",
+    "BriefIngestionSourceAssetRelationType",
     "BriefIngestionSourceType",
     "BriefIngestionStatus",
     "DomainError",
@@ -56,6 +73,8 @@ __all__ = [
     "InvalidBriefTransition",
     "InvalidProjectMutation",
     "InvalidProjectTransition",
+    "InvalidSourceAssetMutation",
+    "MAX_DECLARED_BYTE_SIZE",
     "Membership",
     "MembershipRole",
     "MembershipStatus",
@@ -67,6 +86,15 @@ __all__ = [
     "RequirementIssueSeverity",
     "RequirementIssueStatus",
     "RequirementIssueType",
+    "SOURCE_ASSET_METADATA_SCHEMA_VERSION",
+    "SourceAsset",
+    "SourceAssetMediaType",
+    "SourceAssetOperation",
+    "SourceAssetOperationStatus",
+    "SourceAssetOperationType",
+    "SourceAssetSourceType",
+    "SourceAssetStatus",
+    "SourceAssetVersion",
     "VersionConflict",
     "Workspace",
     "WorkspaceStatus",
