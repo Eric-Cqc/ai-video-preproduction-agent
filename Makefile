@@ -1,4 +1,5 @@
-SHELL := /bin/zsh
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
 
 NODE_RUNNER := ./scripts/run-with-node.sh
 UV_CACHE_DIR ?= $(CURDIR)/.cache/uv
