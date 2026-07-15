@@ -40,5 +40,7 @@ def test_unhandled_errors_do_not_expose_stack_traces(monkeypatch: pytest.MonkeyP
     with TestClient(app, raise_server_exceptions=False) as test_client:
         response = test_client.get("/api/v1/health")
     assert response.status_code == 500
-    assert response.json() == {"detail": "Internal server error"}
+    assert response.json()["error"]["code"] == "internal_error"
+    assert response.json()["error"]["message"] == "Internal server error"
+    assert response.json()["error"]["correlation_id"]
     assert "sensitive internal detail" not in response.text

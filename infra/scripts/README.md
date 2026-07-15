@@ -1,3 +1,5 @@
-# Infrastructure scripts boundary
+# Infrastructure scripts
 
-No cloud or deployment scripts exist in this milestone. Repository-local developer commands belong in the root Makefile unless a future script has a documented infrastructure responsibility.
+`reset_test_database.py` is the only destructive helper. It refuses any database whose name does not end in `_test`, truncates only the five tenant foundation tables, and is exposed as the explicit `make db-reset-test` command.
+
+There are no cloud or deployment scripts. Normal developer commands remain in the root Makefile.

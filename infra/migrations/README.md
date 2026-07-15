@@ -1,3 +1,5 @@
-# Migrations boundary
+# PostgreSQL migrations
 
-No database exists in this milestone and there are no migrations. Future database work must use migrations, preserve tenant-aware semantics, and receive a new approved decision before adding files here.
+Alembic owns the committed PostgreSQL schema history for the tenant persistence foundation. Run migrations through the root Makefile; do not edit an already-applied migration to change history.
+
+New revisions require an explicit message and review of generated constraints, indexes, upgrade, and downgrade operations. PostgreSQL—not SQLite—is the migration contract. See ADR-012.

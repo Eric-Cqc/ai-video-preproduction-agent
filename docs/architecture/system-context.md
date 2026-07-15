@@ -1,21 +1,22 @@
 # 系统上下文
 
-系统中心是“前期制作工作区”。用户和协作者通过未来 Web 客户端编辑制作蓝图；服务端的模块化单体执行领域规则、授权、版本与审计；Worker 执行长时任务。模型、文件存储、身份和导出目标都属于可替换的外部 Provider，只能通过服务端 Adapter 访问。
+系统中心是“前期制作工作区”。Web 仍只展示 foundation status；FastAPI 模块化单体新增 Organization、Workspace、Membership、Project 与 AuditEvent persistence。Worker 保持零生产 handler。模型、文件存储、身份和导出目标仍是未接入的外部 Provider。
 
 ```mermaid
 flowchart LR
-  U[用户与评审者] --> W[Web 客户端]
-  W --> A[服务端：模块化单体]
-  A --> J[后台 Job Worker]
-  A --> P[Provider Adapters]
-  J --> P
-  P --> X[模型、存储、身份、导出 Provider]
+  U[开发/测试 actor context] --> A[FastAPI 模块化单体]
+  W[Next.js foundation status] --> A
+  A --> D[(PostgreSQL 17)]
+  A -. future job contract .-> J[Worker readiness boundary]
+  A -. future adapters .-> P[External Providers]
 ```
+
+API 内部由 domain、application、infrastructure、presentation 四个小边界组成，仍是一个部署与事务边界，不是微服务。PostgreSQL 是单体持久化，不产生跨服务数据所有权或分布式事务。
 
 ## 冻结决定
 
-服务端是策略执行与 Provider 信任边界；浏览器不直连 Provider（[ADR-003](../adr/ADR-003-web-api-worker-separation.md)、[ADR-010](../adr/ADR-010-no-browser-provider-calls.md)）。
+服务端执行 tenant、membership、lifecycle、version 与 audit 策略；浏览器不直连 Provider。Project 与 AuditEvent mutation 在一个数据库事务中完成。
 
 ## 可替换假设与复审触发
 
-当前 skeleton 用 Next.js、FastAPI 与 one-shot Python Worker 落实这些职责边界（[ADR-011](../adr/ADR-011-engineering-skeleton-toolchain.md)）。它们共处一个 monorepo、共享显式契约且没有独立业务数据所有权，因此不构成微服务拆分。框架与部署拓扑仍可替换；达到 [FOUNDATION.md](../../FOUNDATION.md) 的单体或 Job 复审指标时，再以 ADR 评估替换。
+FastAPI、SQLAlchemy、PostgreSQL 载体和部署拓扑可替换。达到工程宪法的单体拆分证据前，不增加服务间 RPC 或独立数据库。

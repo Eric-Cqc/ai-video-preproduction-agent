@@ -22,6 +22,10 @@ class JsonLogFormatter(logging.Formatter):
         }
         if record.exc_info:
             payload["error_type"] = record.exc_info[0].__name__ if record.exc_info[0] else "Error"
+        for field in ("correlation_id", "organization_id", "workspace_id"):
+            value = getattr(record, field, None)
+            if value is not None:
+                payload[field] = str(value)
         return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 

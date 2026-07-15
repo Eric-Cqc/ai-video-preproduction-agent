@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第二阶段（engineering skeleton）。允许：实现 Web/API/Worker 的健康与就绪性、显式契约、最小 Provider registry 边界、确定性 fixtures、测试、CI 和本地开发工具。禁止：产品业务功能、数据库业务表、Supabase、认证、生产队列、模型调用、UI 框架、云资源及真实 Provider 调用。工具链决定见 `docs/adr/ADR-011-engineering-skeleton-toolchain.md`。
+处于 foundation bootstrap 第三阶段（tenant persistence foundation）。允许：在既有 skeleton 内实现 PostgreSQL migration、Organization/Workspace/Membership/Project/AuditEvent、tenant-scoped repository、原子事务、乐观并发和临时非生产 actor context。禁止：Brief、AI/模型调用、Supabase 或其他认证 Provider、生产队列、产品 UI、云资源及真实 Provider 调用。持久化决定见 `docs/adr/ADR-012` 至 `ADR-016`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

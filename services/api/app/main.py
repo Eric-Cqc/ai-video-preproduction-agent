@@ -1,28 +1,75 @@
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
+from services.api.app.application.errors import (
+    ApplicationError,
+    ResourceConflict,
+    ResourceNotFound,
+    TemporaryIdentityDisabled,
+)
+from services.api.app.application.services import TenantApplicationService
 from services.api.app.config import ApiSettings, get_api_settings
+from services.api.app.domain import (
+    DomainError,
+    InvalidProjectMutation,
+    InvalidProjectTransition,
+    VersionConflict,
+)
+from services.api.app.infrastructure.database import create_database_engine, create_session_factory
+from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
+from services.api.app.presentation.routes import router as tenant_router
 from services.api.app.routes.health import router as health_router
 
 logger = logging.getLogger(__name__)
+CORRELATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+TEMPORARY_IDENTITY_HEADERS = (
+    "x-actor-subject",
+    "x-organization-id",
+    "x-workspace-id",
+)
+
+
+def error_response(request: Request, status_code: int, code: str, message: str) -> JSONResponse:
+    correlation_id = getattr(request.state, "correlation_id", str(uuid4()))
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
+                "message": message,
+                "correlation_id": correlation_id,
+            }
+        },
+        headers={"X-Correlation-Id": correlation_id},
+    )
 
 
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
     resolved_settings = settings or get_api_settings()
     configure_logging(resolved_settings.app_environment, resolved_settings.api_log_level)
+    engine = create_database_engine(resolved_settings)
+    session_factory = create_session_factory(engine)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("api startup", extra={"event": "api.startup"})
-        yield
-        logger.info("api shutdown", extra={"event": "api.shutdown"})
+        try:
+            yield
+        finally:
+            engine.dispose()
+            logger.info("api shutdown", extra={"event": "api.shutdown"})
 
     app = FastAPI(
         title="Foundation Core API",
@@ -31,31 +78,91 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.state.tenant_application_service = TenantApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_cors_origins,
         allow_credentials=False,
-        allow_methods=["GET"],
-        allow_headers=["Accept", "Content-Type"],
+        allow_methods=["GET", "POST", "PATCH"],
+        allow_headers=[
+            "Accept",
+            "Content-Type",
+            "X-Actor-Subject",
+            "X-Organization-Id",
+            "X-Workspace-Id",
+            "X-Correlation-Id",
+        ],
     )
     app.include_router(health_router)
+    app.include_router(tenant_router)
+
+    @app.middleware("http")
+    async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        raw_correlation_id = request.headers.get("x-correlation-id")
+        correlation_id = raw_correlation_id or str(uuid4())
+        request.state.correlation_id = correlation_id
+        if raw_correlation_id is not None and not CORRELATION_ID_PATTERN.fullmatch(
+            raw_correlation_id
+        ):
+            return error_response(request, 400, "invalid_correlation_id", "Invalid request")
+        if not resolved_settings.temporary_identity_headers_enabled and any(
+            header in request.headers for header in TEMPORARY_IDENTITY_HEADERS
+        ):
+            return error_response(
+                request,
+                403,
+                "temporary_identity_disabled",
+                "Temporary identity context is disabled",
+            )
+        response = await call_next(request)
+        response.headers["X-Correlation-Id"] = correlation_id
+        return response
 
     @app.get("/", include_in_schema=False)
     def root() -> RedirectResponse:
         return RedirectResponse(url="/api/v1/health", status_code=307)
 
+    @app.exception_handler(ApplicationError)
+    async def application_error_handler(request: Request, error: ApplicationError) -> JSONResponse:
+        status_code = 400
+        if isinstance(error, ResourceNotFound):
+            status_code = 404
+        elif isinstance(error, ResourceConflict):
+            status_code = 409
+        elif isinstance(error, TemporaryIdentityDisabled):
+            status_code = 403
+        return error_response(request, status_code, error.code, str(error))
+
+    @app.exception_handler(DomainError)
+    async def domain_error_handler(request: Request, error: DomainError) -> JSONResponse:
+        status_code = 409 if isinstance(error, (VersionConflict, InvalidProjectTransition)) else 400
+        if isinstance(error, InvalidProjectMutation) and "archived" in str(error):
+            status_code = 409
+        return error_response(request, status_code, error.code, str(error))
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, _: RequestValidationError) -> JSONResponse:
+        return error_response(request, 400, "invalid_request", "Invalid request")
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, error: Exception) -> JSONResponse:
         logger.error(
             "unhandled API error",
-            extra={"event": "api.unhandled_error", "path": request.url.path},
+            extra={
+                "event": "api.unhandled_error",
+                "path": request.url.path,
+                "correlation_id": getattr(request.state, "correlation_id", None),
+            },
             exc_info=error,
         )
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        return error_response(request, 500, "internal_error", "Internal server error")
 
     return app
 
 
 app = create_app()
+
 
 __all__ = ["app", "create_app", "SERVICE_NAME"]

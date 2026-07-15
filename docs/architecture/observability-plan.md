@@ -1,13 +1,15 @@
 # 可观测性计划
 
-可观测性服务于可追溯的制作决策和可运营的后台任务，而非采集用户内容。未来每个请求/Job 关联 correlation ID、tenant、项目、对象版本、操作者或触发源、Adapter、结果状态与耗时；日志默认不含 Prompt 正文、素材、密钥或个人数据。
+API 为每个请求接受受限 `X-Correlation-Id` 或生成 UUID，并在响应、结构化错误、日志和成功 mutation AuditEvent 中传播。结构化日志固定包含 service、version、environment、event、timestamp、level，并在可用时包含 correlation ID 与 tenant identifiers。
+
+AuditEvent 是产品级 mutation evidence：记录 actor subject、tenant、aggregate、action、version/status metadata 与 occurred_at；不记录数据库 URL、secret、Prompt、素材、请求正文或 Provider response。failed authorization、validation、stale concurrency 和 rollback 不写成功事件。
+
+Worker self-check 保持零 handler 与结构化启动信息。没有 hosted logging、OpenTelemetry、production analytics 或全局 audit search。
 
 ## 冻结决定
 
-版本与审计记录是产品能力，Job 生命周期必须可查询、可重试且可关联来源（[ADR-006](../adr/ADR-006-versioning-and-audit.md)、[ADR-007](../adr/ADR-007-background-jobs.md)）。
+版本与审计必须能关联关键 mutation；日志不替代 AuditEvent，AuditEvent 不替代 canonical domain state。
 
 ## 可替换假设与复审触发
 
-当前 skeleton 使用本地 JSON structured logs，固定包含 service、version、environment、event、timestamp 与 level；API 未处理异常只记录错误类型，不向客户端暴露堆栈，普通 health 日志不采集请求正文。Worker self-check 同样输出结构化启动事件与零 handler 就绪状态。
-
-指标、追踪工具与保留期限仍未选定；没有 hosted logging 或 OpenTelemetry 基础设施。在首次生产试点前定义 SLO、correlation ID、告警、脱敏规则和审计访问权限；发生安全事件或无法定位一次关键变更时立即复审。
+指标、追踪、日志保留与 hosted tooling 尚未选择。首次生产试点前定义 SLO、脱敏、访问权限与保留策略；发生跨 tenant 事件或无法定位一次关键 mutation 时立即复审。

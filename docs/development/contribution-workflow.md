@@ -1,17 +1,14 @@
 # 贡献流程
 
-1. 阅读 `FOUNDATION.md`、项目级 `AGENTS.md` 及受影响的产品/架构文档。
-2. 将改动限定为一个可审查意图；不得顺带引入未批准的框架、依赖或基础设施。
-3. 若触及冻结决定或复审触发条件，先新增 ADR，再实施。
-4. 检查 Markdown 链接、术语、边界和与既有 ADR 的一致性；实现阶段再执行相应格式化、测试与构建。
-5. 交付时说明变更、验证、假设与未解决项；不提交密钥或客户数据。
+1. 阅读 `FOUNDATION.md`、项目级 `AGENTS.md`、受影响的架构文档与 ADR。
+2. 将改动限定为一个可审查意图；不得顺带引入依赖、基础设施、Brief、AI、认证或云能力。
+3. Schema 变更必须更新 SQLAlchemy metadata、追加 Alembic revision，并审查 upgrade/downgrade、tenant ownership、约束和索引。
+4. Project mutation 必须携带 tenant scope、expected version，并与最小 AuditEvent 在一个 UoW 中提交。
+5. 运行相关分层测试与 `make check`，检查 migration drift、锁文件、生成物、secret、IDOR 和 scope creep。
+6. 交付时说明变更、验证、假设与未解决项；不提交数据库凭据或客户数据。
 
-当前可执行阶段以 `make format` 处理机械格式，以 `make check` 执行提交前完整质量门禁。所有 JavaScript 子命令由 Makefile 转交 `scripts/run-with-node.sh`；不得绕开 wrapper。
-
-## 冻结决定
-
-ADR 采用追加式历史：接受的决定不被静默重写，替代决定以新 ADR 记录并交叉引用。
+所有 JavaScript 子命令由 Makefile 转交 `scripts/run-with-node.sh`。ADR 采用追加历史，已接受决定不被静默重写。
 
 ## 复审触发条件
 
-当团队规模、合规要求或发布频率使现有审查流程不足时，记录证据并以 ADR 更新流程。
+当团队规模、合规要求、数据库 migration 协作或发布频率使现有流程不足时，记录证据并以新 ADR 更新。
