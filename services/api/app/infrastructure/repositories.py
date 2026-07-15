@@ -29,6 +29,14 @@ from services.api.app.domain import (
     RequirementIssueSeverity,
     RequirementIssueStatus,
     RequirementIssueType,
+    SourceAsset,
+    SourceAssetMediaType,
+    SourceAssetOperation,
+    SourceAssetOperationStatus,
+    SourceAssetOperationType,
+    SourceAssetSourceType,
+    SourceAssetStatus,
+    SourceAssetVersion,
     VersionConflict,
     Workspace,
     WorkspaceStatus,
@@ -42,6 +50,9 @@ from services.api.app.infrastructure.models import (
     OrganizationRecord,
     ProjectRecord,
     RequirementIssueRecord,
+    SourceAssetOperationRecord,
+    SourceAssetRecord,
+    SourceAssetVersionRecord,
     WorkspaceRecord,
 )
 
@@ -561,6 +572,314 @@ class SqlAlchemyBriefVersionRepository:
         )
 
 
+class SqlAlchemySourceAssetRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, asset: SourceAsset) -> SourceAsset:
+        record = SourceAssetRecord(
+            id=asset.id,
+            organization_id=asset.organization_id,
+            workspace_id=asset.workspace_id,
+            project_id=asset.project_id,
+            display_name=asset.display_name,
+            status=asset.status.value,
+            current_version_id=asset.current_version_id,
+            latest_version_number=asset.latest_version_number,
+            created_by_actor_subject=asset.created_by_actor_subject,
+            created_at=asset.created_at,
+            updated_at=asset.updated_at,
+            version=asset.version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "source_asset_conflict", "source asset ownership is invalid"
+        )
+        return _source_asset(record)
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, source_asset_id: UUID
+    ) -> SourceAsset | None:
+        record = self.session.scalar(
+            self._scoped_query(organization_id, workspace_id, project_id).where(
+                SourceAssetRecord.id == source_asset_id
+            )
+        )
+        return _source_asset(record) if record is not None else None
+
+    def list(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        limit: int,
+        offset: int,
+    ) -> list[SourceAsset]:
+        records = self.session.scalars(
+            self._scoped_query(organization_id, workspace_id, project_id)
+            .order_by(SourceAssetRecord.created_at, SourceAssetRecord.id)
+            .limit(limit)
+            .offset(offset)
+        ).all()
+        return [_source_asset(record) for record in records]
+
+    def compare_and_move_pointer(
+        self,
+        asset: SourceAsset,
+        *,
+        expected_version: int,
+        expected_current_version_id: UUID,
+    ) -> SourceAsset:
+        record = self.session.scalar(
+            update(SourceAssetRecord)
+            .where(
+                SourceAssetRecord.organization_id == asset.organization_id,
+                SourceAssetRecord.workspace_id == asset.workspace_id,
+                SourceAssetRecord.project_id == asset.project_id,
+                SourceAssetRecord.id == asset.id,
+                SourceAssetRecord.version == expected_version,
+                SourceAssetRecord.current_version_id == expected_current_version_id,
+                SourceAssetRecord.status == SourceAssetStatus.ACTIVE.value,
+            )
+            .values(
+                current_version_id=asset.current_version_id,
+                latest_version_number=SourceAssetRecord.latest_version_number + 1,
+                updated_at=asset.updated_at,
+                version=SourceAssetRecord.version + 1,
+            )
+            .returning(SourceAssetRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("source asset version or current pointer changed before update")
+        return _source_asset(record)
+
+    def compare_and_archive(
+        self,
+        asset: SourceAsset,
+        *,
+        expected_version: int,
+        expected_current_version_id: UUID,
+    ) -> SourceAsset:
+        record = self.session.scalar(
+            update(SourceAssetRecord)
+            .where(
+                SourceAssetRecord.organization_id == asset.organization_id,
+                SourceAssetRecord.workspace_id == asset.workspace_id,
+                SourceAssetRecord.project_id == asset.project_id,
+                SourceAssetRecord.id == asset.id,
+                SourceAssetRecord.version == expected_version,
+                SourceAssetRecord.current_version_id == expected_current_version_id,
+                SourceAssetRecord.status == SourceAssetStatus.ACTIVE.value,
+            )
+            .values(
+                status=SourceAssetStatus.ARCHIVED.value,
+                updated_at=asset.updated_at,
+                version=SourceAssetRecord.version + 1,
+            )
+            .returning(SourceAssetRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("source asset could not be archived with the expected pointer")
+        return _source_asset(record)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID, workspace_id: UUID, project_id: UUID
+    ) -> Select[tuple[SourceAssetRecord]]:
+        return select(SourceAssetRecord).where(
+            SourceAssetRecord.organization_id == organization_id,
+            SourceAssetRecord.workspace_id == workspace_id,
+            SourceAssetRecord.project_id == project_id,
+        )
+
+
+class SqlAlchemySourceAssetVersionRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, version: SourceAssetVersion) -> SourceAssetVersion:
+        record = SourceAssetVersionRecord(
+            id=version.id,
+            organization_id=version.organization_id,
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            source_asset_id=version.source_asset_id,
+            version_number=version.version_number,
+            original_filename=version.original_filename,
+            media_type=version.media_type.value,
+            byte_size=version.byte_size,
+            checksum_algorithm=version.checksum_algorithm,
+            checksum_value=version.checksum_value,
+            source_type=version.source_type.value,
+            source_reference=version.source_reference,
+            external_record_id=version.external_record_id,
+            declared_created_at=version.declared_created_at,
+            created_by_actor_subject=version.created_by_actor_subject,
+            created_at=version.created_at,
+            supersedes_version_id=version.supersedes_version_id,
+            metadata_schema_version=version.metadata_schema_version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "source_asset_version_conflict", "source asset version is invalid"
+        )
+        return _source_asset_version(record)
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        version_id: UUID,
+    ) -> SourceAssetVersion | None:
+        record = self.session.scalar(
+            self._scoped_query(organization_id, workspace_id, project_id, source_asset_id).where(
+                SourceAssetVersionRecord.id == version_id
+            )
+        )
+        return _source_asset_version(record) if record is not None else None
+
+    def list_for_asset(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, source_asset_id: UUID
+    ) -> list[SourceAssetVersion]:
+        records = self.session.scalars(
+            self._scoped_query(organization_id, workspace_id, project_id, source_asset_id).order_by(
+                SourceAssetVersionRecord.version_number
+            )
+        ).all()
+        return [_source_asset_version(record) for record in records]
+
+    def find_declared_duplicate_within_project(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        checksum_algorithm: str,
+        checksum_value: str,
+        byte_size: int,
+        media_type: str,
+        exclude_source_asset_id: UUID | None = None,
+    ) -> int:
+        query = (
+            select(func.count())
+            .select_from(SourceAssetVersionRecord)
+            .where(
+                SourceAssetVersionRecord.organization_id == organization_id,
+                SourceAssetVersionRecord.workspace_id == workspace_id,
+                SourceAssetVersionRecord.project_id == project_id,
+                SourceAssetVersionRecord.checksum_algorithm == checksum_algorithm,
+                SourceAssetVersionRecord.checksum_value == checksum_value,
+                SourceAssetVersionRecord.byte_size == byte_size,
+                SourceAssetVersionRecord.media_type == media_type,
+            )
+        )
+        if exclude_source_asset_id is not None:
+            query = query.where(SourceAssetVersionRecord.source_asset_id != exclude_source_asset_id)
+        return int(self.session.scalar(query) or 0)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID, workspace_id: UUID, project_id: UUID, source_asset_id: UUID
+    ) -> Select[tuple[SourceAssetVersionRecord]]:
+        return select(SourceAssetVersionRecord).where(
+            SourceAssetVersionRecord.organization_id == organization_id,
+            SourceAssetVersionRecord.workspace_id == workspace_id,
+            SourceAssetVersionRecord.project_id == project_id,
+            SourceAssetVersionRecord.source_asset_id == source_asset_id,
+        )
+
+
+class SqlAlchemySourceAssetOperationRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, operation: SourceAssetOperation) -> SourceAssetOperation | None:
+        if operation.status is not SourceAssetOperationStatus.RESERVED:
+            raise ValueError("only reserved source asset operations may be inserted")
+        record = self.session.scalar(
+            insert(SourceAssetOperationRecord)
+            .values(
+                id=operation.id,
+                organization_id=operation.organization_id,
+                workspace_id=operation.workspace_id,
+                project_id=operation.project_id,
+                source_asset_id=operation.source_asset_id,
+                source_asset_version_id=operation.source_asset_version_id,
+                operation=operation.operation.value,
+                idempotency_key=operation.idempotency_key,
+                request_digest=operation.request_digest,
+                status=operation.status.value,
+                submitted_by_actor_subject=operation.submitted_by_actor_subject,
+                submitted_at=operation.submitted_at,
+                completed_at=operation.completed_at,
+                correlation_id=operation.correlation_id,
+                version=operation.version,
+            )
+            .on_conflict_do_nothing(constraint="uq_source_asset_operations_idempotency")
+            .returning(SourceAssetOperationRecord)
+        )
+        return _source_asset_operation(record) if record is not None else None
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: SourceAssetOperationType,
+        idempotency_key: str,
+    ) -> SourceAssetOperation | None:
+        record = self.session.scalar(
+            select(SourceAssetOperationRecord).where(
+                SourceAssetOperationRecord.organization_id == organization_id,
+                SourceAssetOperationRecord.workspace_id == workspace_id,
+                SourceAssetOperationRecord.project_id == project_id,
+                SourceAssetOperationRecord.operation == operation.value,
+                SourceAssetOperationRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _source_asset_operation(record) if record is not None else None
+
+    def finalize_accepted(
+        self,
+        operation: SourceAssetOperation,
+        *,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID | None,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> SourceAssetOperation:
+        record = self.session.scalar(
+            update(SourceAssetOperationRecord)
+            .where(
+                SourceAssetOperationRecord.organization_id == operation.organization_id,
+                SourceAssetOperationRecord.workspace_id == operation.workspace_id,
+                SourceAssetOperationRecord.project_id == operation.project_id,
+                SourceAssetOperationRecord.id == operation.id,
+                SourceAssetOperationRecord.status == SourceAssetOperationStatus.RESERVED.value,
+                SourceAssetOperationRecord.operation == operation.operation.value,
+                SourceAssetOperationRecord.idempotency_key == operation.idempotency_key,
+                SourceAssetOperationRecord.request_digest == operation.request_digest,
+                SourceAssetOperationRecord.version == expected_version,
+            )
+            .values(
+                status=SourceAssetOperationStatus.ACCEPTED.value,
+                source_asset_id=source_asset_id,
+                source_asset_version_id=source_asset_version_id,
+                completed_at=completed_at,
+                version=expected_version + 1,
+            )
+            .returning(SourceAssetOperationRecord)
+        )
+        if record is None:
+            raise VersionConflict("source asset operation changed before acceptance")
+        return _source_asset_operation(record)
+
+
 class SqlAlchemyRequirementIssueRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -862,6 +1181,67 @@ def _brief_version(record: BriefVersionRecord) -> BriefVersion:
         approved_by_actor_subject=record.approved_by_actor_subject,
         supersedes_version_id=record.supersedes_version_id,
         content_schema_version=record.content_schema_version,
+    )
+
+
+def _source_asset(record: SourceAssetRecord) -> SourceAsset:
+    return SourceAsset(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        display_name=record.display_name,
+        status=SourceAssetStatus(record.status),
+        current_version_id=record.current_version_id,
+        latest_version_number=record.latest_version_number,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        version=record.version,
+    )
+
+
+def _source_asset_version(record: SourceAssetVersionRecord) -> SourceAssetVersion:
+    return SourceAssetVersion(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        version_number=record.version_number,
+        original_filename=record.original_filename,
+        media_type=SourceAssetMediaType(record.media_type),
+        byte_size=record.byte_size,
+        checksum_algorithm=record.checksum_algorithm,
+        checksum_value=record.checksum_value,
+        source_type=SourceAssetSourceType(record.source_type),
+        source_reference=record.source_reference,
+        external_record_id=record.external_record_id,
+        declared_created_at=record.declared_created_at,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        supersedes_version_id=record.supersedes_version_id,
+        metadata_schema_version=record.metadata_schema_version,
+    )
+
+
+def _source_asset_operation(record: SourceAssetOperationRecord) -> SourceAssetOperation:
+    return SourceAssetOperation(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        operation=SourceAssetOperationType(record.operation),
+        idempotency_key=record.idempotency_key,
+        request_digest=record.request_digest,
+        status=SourceAssetOperationStatus(record.status),
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
+        version=record.version,
     )
 
 

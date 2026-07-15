@@ -22,5 +22,9 @@ class InvalidBriefMutation(DomainError):
     code = "invalid_brief_mutation"
 
 
+class InvalidSourceAssetMutation(DomainError):
+    code = "invalid_source_asset_mutation"
+
+
 class ApprovalBlocked(DomainError):
     code = "brief_approval_blocked"

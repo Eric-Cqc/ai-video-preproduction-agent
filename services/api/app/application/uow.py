@@ -10,6 +10,9 @@ from services.api.app.application.repositories import (
     OrganizationRepository,
     ProjectRepository,
     RequirementIssueRepository,
+    SourceAssetOperationRepository,
+    SourceAssetRepository,
+    SourceAssetVersionRepository,
     WorkspaceRepository,
 )
 
@@ -23,6 +26,9 @@ class UnitOfWork(Protocol):
     brief_ingestions: BriefIngestionRepository
     brief_versions: BriefVersionRepository
     requirement_issues: RequirementIssueRepository
+    source_assets: SourceAssetRepository
+    source_asset_versions: SourceAssetVersionRepository
+    source_asset_operations: SourceAssetOperationRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...
