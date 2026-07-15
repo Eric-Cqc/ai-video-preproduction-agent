@@ -23,8 +23,8 @@ def main() -> int:
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE TABLE audit_events, projects, memberships, workspaces, "
-                    "organizations CASCADE"
+                    "TRUNCATE TABLE requirement_issues, brief_versions, briefs, audit_events, "
+                    "projects, memberships, workspaces, organizations CASCADE"
                 )
             )
     finally:

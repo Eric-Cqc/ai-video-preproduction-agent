@@ -1,0 +1,279 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://foundation.local/contracts/structured-brief-v1.schema.json",
+  "title": "Structured Video Brief v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "objective",
+    "audience",
+    "offer",
+    "product",
+    "brand",
+    "channels",
+    "deliverables",
+    "creative_constraints",
+    "production_constraints",
+    "legal_and_compliance",
+    "references",
+    "success_criteria",
+    "open_questions"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary_goal", "secondary_goals", "desired_action"],
+      "properties": {
+        "primary_goal": { "$ref": "#/definitions/nullableText" },
+        "secondary_goals": { "$ref": "#/definitions/textList" },
+        "desired_action": { "$ref": "#/definitions/nullableText" }
+      }
+    },
+    "audience": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_audience",
+        "secondary_audiences",
+        "geography",
+        "language",
+        "audience_insights"
+      ],
+      "properties": {
+        "primary_audience": { "$ref": "#/definitions/nullableText" },
+        "secondary_audiences": { "$ref": "#/definitions/textList" },
+        "geography": { "$ref": "#/definitions/textList" },
+        "language": { "$ref": "#/definitions/textList" },
+        "audience_insights": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offer_details", "mandatory_claims", "prohibited_claims"],
+      "properties": {
+        "offer_details": { "$ref": "#/definitions/nullableText" },
+        "mandatory_claims": { "$ref": "#/definitions/textList" },
+        "prohibited_claims": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product_name",
+        "product_category",
+        "key_features",
+        "key_benefits",
+        "proof_points"
+      ],
+      "properties": {
+        "product_name": { "$ref": "#/definitions/nullableShortText" },
+        "product_category": { "$ref": "#/definitions/nullableShortText" },
+        "key_features": { "$ref": "#/definitions/textList" },
+        "key_benefits": { "$ref": "#/definitions/textList" },
+        "proof_points": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "brand_name",
+        "tone",
+        "personality",
+        "visual_guidelines",
+        "mandatory_elements",
+        "prohibited_elements"
+      ],
+      "properties": {
+        "brand_name": { "$ref": "#/definitions/nullableShortText" },
+        "tone": { "$ref": "#/definitions/textList" },
+        "personality": { "$ref": "#/definitions/textList" },
+        "visual_guidelines": { "$ref": "#/definitions/textList" },
+        "mandatory_elements": { "$ref": "#/definitions/textList" },
+        "prohibited_elements": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "channels": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "social",
+          "digital_ad",
+          "broadcast",
+          "ecommerce",
+          "internal",
+          "other"
+        ]
+      }
+    },
+    "deliverables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aspect_ratios",
+        "duration_seconds",
+        "deliverable_count",
+        "locale_variants",
+        "caption_requirements",
+        "audio_requirements"
+      ],
+      "properties": {
+        "aspect_ratios": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9]{1,2}:[0-9]{1,2}$" }
+        },
+        "duration_seconds": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 15, "maximum": 60 }
+        },
+        "deliverable_count": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "locale_variants": { "$ref": "#/definitions/shortTextList" },
+        "caption_requirements": { "$ref": "#/definitions/nullableText" },
+        "audio_requirements": { "$ref": "#/definitions/nullableText" }
+      }
+    },
+    "creative_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_message",
+        "call_to_action",
+        "opening_hook_requirements",
+        "narrative_preferences",
+        "reference_styles",
+        "prohibited_themes"
+      ],
+      "properties": {
+        "required_message": { "$ref": "#/definitions/nullableText" },
+        "call_to_action": { "$ref": "#/definitions/nullableText" },
+        "opening_hook_requirements": { "$ref": "#/definitions/textList" },
+        "narrative_preferences": { "$ref": "#/definitions/textList" },
+        "reference_styles": { "$ref": "#/definitions/textList" },
+        "prohibited_themes": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "production_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "available_assets",
+        "required_assets",
+        "talent_constraints",
+        "location_constraints",
+        "deadline",
+        "budget_range",
+        "model_or_tool_constraints"
+      ],
+      "properties": {
+        "available_assets": { "$ref": "#/definitions/textList" },
+        "required_assets": { "$ref": "#/definitions/textList" },
+        "talent_constraints": { "$ref": "#/definitions/textList" },
+        "location_constraints": { "$ref": "#/definitions/textList" },
+        "deadline": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+          ]
+        },
+        "budget_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["currency", "minimum", "maximum"],
+          "properties": {
+            "currency": {
+              "anyOf": [
+                { "type": "null" },
+                { "type": "string", "pattern": "^[A-Z]{3}$" }
+              ]
+            },
+            "minimum": {
+              "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0 }]
+            },
+            "maximum": {
+              "anyOf": [{ "type": "null" }, { "type": "number", "minimum": 0 }]
+            }
+          }
+        },
+        "model_or_tool_constraints": { "$ref": "#/definitions/textList" }
+      }
+    },
+    "legal_and_compliance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disclaimer_requirements",
+        "regulated_category",
+        "claim_substantiation_notes",
+        "usage_rights_notes"
+      ],
+      "properties": {
+        "disclaimer_requirements": { "$ref": "#/definitions/textList" },
+        "regulated_category": { "$ref": "#/definitions/nullableShortText" },
+        "claim_substantiation_notes": { "$ref": "#/definitions/textList" },
+        "usage_rights_notes": { "$ref": "#/definitions/nullableText" }
+      }
+    },
+    "references": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "notes"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "notes": { "$ref": "#/definitions/nullableText" }
+        }
+      }
+    },
+    "success_criteria": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["business_metrics", "creative_metrics", "evaluation_notes"],
+      "properties": {
+        "business_metrics": { "$ref": "#/definitions/textList" },
+        "creative_metrics": { "$ref": "#/definitions/textList" },
+        "evaluation_notes": { "$ref": "#/definitions/nullableText" }
+      }
+    },
+    "open_questions": { "$ref": "#/definitions/textList" }
+  },
+  "definitions": {
+    "nullableShortText": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1, "maxLength": 200 }
+      ]
+    },
+    "nullableText": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1, "maxLength": 1000 }
+      ]
+    },
+    "shortTextList": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+    },
+    "textList": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    }
+  }
+}

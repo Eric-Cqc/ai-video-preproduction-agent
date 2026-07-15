@@ -23,6 +23,7 @@ class ApiSettings(BaseSettings):
     database_max_overflow: int = Field(default=5, ge=0, le=50)
     database_pool_timeout_seconds: float = Field(default=10, gt=0, le=120)
     database_echo: bool = False
+    api_max_request_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
 
     @model_validator(mode="after")
     def validate_database_configuration(self) -> "ApiSettings":

@@ -1,8 +1,8 @@
 # 测试策略
 
-测试按风险分层：纯 domain tests 验证 Project 状态机与版本；真实 PostgreSQL tests 验证 repository、复合外键、部分唯一索引、事务回滚和 migration head；API tests 验证临时 context、membership、opaque 404、mass assignment、并发 409、安全错误与 audit scope；既有 Vitest/pytest 继续验证 Web、health contract、Worker 和 model registry。
+测试按风险分层：纯 domain tests 验证 Project/Brief 状态机、版本与有限 deterministic issue checks；真实 PostgreSQL tests 验证 repository、复合外键、部分唯一索引、事务回滚、Brief CAS 和 migration head；API tests 验证临时 context、membership、opaque 404、mass assignment、不可变 snapshot、审批 blocker、并发 409、安全错误与 audit scope；既有 Vitest/pytest 继续验证 Web、health/Structured Brief contract、Worker 和 model registry。
 
-Persistence tests 使用独立 `_test` database，不使用 mock repository 代替 tenant isolation，不依赖执行顺序。fixture 在每个相关测试前后只截断五张业务表。CI 从空 PostgreSQL 17 service 应用 migration，然后执行同一套 gate。
+Persistence tests 使用独立 `_test` database，不使用 mock repository 代替 tenant isolation，不依赖执行顺序。fixture 在每个相关测试前后截断当前八张业务表。CI 从空 PostgreSQL 17 service 应用 migration，然后执行同一套 gate。
 
 ## 根命令
 

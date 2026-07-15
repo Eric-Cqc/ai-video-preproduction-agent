@@ -3,9 +3,12 @@ from typing import Protocol, Self
 
 from services.api.app.application.repositories import (
     AuditEventRepository,
+    BriefRepository,
+    BriefVersionRepository,
     MembershipRepository,
     OrganizationRepository,
     ProjectRepository,
+    RequirementIssueRepository,
     WorkspaceRepository,
 )
 
@@ -15,6 +18,9 @@ class UnitOfWork(Protocol):
     workspaces: WorkspaceRepository
     memberships: MembershipRepository
     projects: ProjectRepository
+    briefs: BriefRepository
+    brief_versions: BriefVersionRepository
+    requirement_issues: RequirementIssueRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...

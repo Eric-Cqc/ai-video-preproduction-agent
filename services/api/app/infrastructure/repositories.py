@@ -1,12 +1,17 @@
 from uuid import UUID
 
-from sqlalchemy import Select, case, select, update
+from sqlalchemy import Select, case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from services.api.app.application.errors import ResourceConflict
 from services.api.app.domain import (
     AuditEvent,
+    Brief,
+    BriefSourceType,
+    BriefStatus,
+    BriefVersion,
+    BriefVersionLifecycle,
     Membership,
     MembershipRole,
     MembershipStatus,
@@ -14,15 +19,22 @@ from services.api.app.domain import (
     OrganizationStatus,
     Project,
     ProjectStatus,
+    RequirementIssue,
+    RequirementIssueSeverity,
+    RequirementIssueStatus,
+    RequirementIssueType,
     VersionConflict,
     Workspace,
     WorkspaceStatus,
 )
 from services.api.app.infrastructure.models import (
     AuditEventRecord,
+    BriefRecord,
+    BriefVersionRecord,
     MembershipRecord,
     OrganizationRecord,
     ProjectRecord,
+    RequirementIssueRecord,
     WorkspaceRecord,
 )
 
@@ -222,6 +234,353 @@ class SqlAlchemyProjectRepository:
         )
 
 
+class SqlAlchemyBriefRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, brief: Brief) -> Brief:
+        record = BriefRecord(
+            id=brief.id,
+            organization_id=brief.organization_id,
+            workspace_id=brief.workspace_id,
+            project_id=brief.project_id,
+            title=brief.title,
+            status=brief.status.value,
+            current_version_id=brief.current_version_id,
+            latest_version_number=brief.latest_version_number,
+            created_by_actor_subject=brief.created_by_actor_subject,
+            created_at=brief.created_at,
+            updated_at=brief.updated_at,
+            version=brief.version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(self.session, "brief_conflict", "brief ownership is invalid")
+        return _brief(record)
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_id: UUID
+    ) -> Brief | None:
+        record = self.session.scalar(
+            self._scoped_query(organization_id, workspace_id, project_id).where(
+                BriefRecord.id == brief_id
+            )
+        )
+        return _brief(record) if record is not None else None
+
+    def list(self, organization_id: UUID, workspace_id: UUID, project_id: UUID) -> list[Brief]:
+        records = self.session.scalars(
+            self._scoped_query(organization_id, workspace_id, project_id).order_by(
+                BriefRecord.created_at, BriefRecord.id
+            )
+        ).all()
+        return [_brief(record) for record in records]
+
+    def update(
+        self,
+        brief: Brief,
+        *,
+        expected_version: int,
+        expected_current_version_id: UUID,
+    ) -> Brief:
+        record = self.session.scalar(
+            update(BriefRecord)
+            .where(
+                BriefRecord.organization_id == brief.organization_id,
+                BriefRecord.workspace_id == brief.workspace_id,
+                BriefRecord.project_id == brief.project_id,
+                BriefRecord.id == brief.id,
+                BriefRecord.version == expected_version,
+                BriefRecord.current_version_id == expected_current_version_id,
+            )
+            .values(
+                status=brief.status.value,
+                current_version_id=brief.current_version_id,
+                latest_version_number=brief.latest_version_number,
+                updated_at=brief.updated_at,
+                version=brief.version,
+            )
+            .returning(BriefRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("brief version or current version changed before update")
+        return _brief(record)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID, workspace_id: UUID, project_id: UUID
+    ) -> Select[tuple[BriefRecord]]:
+        return select(BriefRecord).where(
+            BriefRecord.organization_id == organization_id,
+            BriefRecord.workspace_id == workspace_id,
+            BriefRecord.project_id == project_id,
+        )
+
+
+class SqlAlchemyBriefVersionRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, version: BriefVersion) -> BriefVersion:
+        record = BriefVersionRecord(
+            id=version.id,
+            organization_id=version.organization_id,
+            workspace_id=version.workspace_id,
+            project_id=version.project_id,
+            brief_id=version.brief_id,
+            version_number=version.version_number,
+            lifecycle_state=version.lifecycle_state.value,
+            structured_content=version.structured_content,
+            source_type=version.source_type.value,
+            source_reference=version.source_reference,
+            change_summary=version.change_summary,
+            created_by_actor_subject=version.created_by_actor_subject,
+            created_at=version.created_at,
+            submitted_for_review_at=version.submitted_for_review_at,
+            approved_at=version.approved_at,
+            approved_by_actor_subject=version.approved_by_actor_subject,
+            supersedes_version_id=version.supersedes_version_id,
+            content_schema_version=version.content_schema_version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(self.session, "brief_version_conflict", "brief version is invalid")
+        return _brief_version(record)
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        brief_id: UUID,
+        version_id: UUID,
+    ) -> BriefVersion | None:
+        record = self.session.scalar(
+            self._scoped_query(organization_id, workspace_id, project_id, brief_id).where(
+                BriefVersionRecord.id == version_id
+            )
+        )
+        return _brief_version(record) if record is not None else None
+
+    def list(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_id: UUID
+    ) -> list[BriefVersion]:
+        records = self.session.scalars(
+            self._scoped_query(organization_id, workspace_id, project_id, brief_id).order_by(
+                BriefVersionRecord.version_number
+            )
+        ).all()
+        return [_brief_version(record) for record in records]
+
+    def submit_for_review(self, version: BriefVersion) -> BriefVersion:
+        record = self.session.scalar(
+            update(BriefVersionRecord)
+            .where(
+                BriefVersionRecord.organization_id == version.organization_id,
+                BriefVersionRecord.workspace_id == version.workspace_id,
+                BriefVersionRecord.project_id == version.project_id,
+                BriefVersionRecord.brief_id == version.brief_id,
+                BriefVersionRecord.id == version.id,
+                BriefVersionRecord.lifecycle_state == BriefVersionLifecycle.DRAFT.value,
+            )
+            .values(
+                lifecycle_state=BriefVersionLifecycle.IN_REVIEW.value,
+                submitted_for_review_at=version.submitted_for_review_at,
+            )
+            .returning(BriefVersionRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("brief version lifecycle changed before review submission")
+        return _brief_version(record)
+
+    def approve(self, version: BriefVersion) -> BriefVersion:
+        record = self.session.scalar(
+            update(BriefVersionRecord)
+            .where(
+                BriefVersionRecord.organization_id == version.organization_id,
+                BriefVersionRecord.workspace_id == version.workspace_id,
+                BriefVersionRecord.project_id == version.project_id,
+                BriefVersionRecord.brief_id == version.brief_id,
+                BriefVersionRecord.id == version.id,
+                BriefVersionRecord.lifecycle_state == BriefVersionLifecycle.IN_REVIEW.value,
+            )
+            .values(
+                lifecycle_state=BriefVersionLifecycle.APPROVED.value,
+                approved_at=version.approved_at,
+                approved_by_actor_subject=version.approved_by_actor_subject,
+            )
+            .returning(BriefVersionRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("brief version lifecycle changed before approval")
+        return _brief_version(record)
+
+    def supersede(self, version: BriefVersion) -> BriefVersion:
+        record = self.session.scalar(
+            update(BriefVersionRecord)
+            .where(
+                BriefVersionRecord.organization_id == version.organization_id,
+                BriefVersionRecord.workspace_id == version.workspace_id,
+                BriefVersionRecord.project_id == version.project_id,
+                BriefVersionRecord.brief_id == version.brief_id,
+                BriefVersionRecord.id == version.id,
+                BriefVersionRecord.lifecycle_state.in_(
+                    [BriefVersionLifecycle.DRAFT.value, BriefVersionLifecycle.IN_REVIEW.value]
+                ),
+            )
+            .values(lifecycle_state=BriefVersionLifecycle.SUPERSEDED.value)
+            .returning(BriefVersionRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("approved or stale brief version cannot be superseded")
+        return _brief_version(record)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_id: UUID
+    ) -> Select[tuple[BriefVersionRecord]]:
+        return select(BriefVersionRecord).where(
+            BriefVersionRecord.organization_id == organization_id,
+            BriefVersionRecord.workspace_id == workspace_id,
+            BriefVersionRecord.project_id == project_id,
+            BriefVersionRecord.brief_id == brief_id,
+        )
+
+
+class SqlAlchemyRequirementIssueRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, issue: RequirementIssue) -> RequirementIssue:
+        record = RequirementIssueRecord(
+            id=issue.id,
+            organization_id=issue.organization_id,
+            workspace_id=issue.workspace_id,
+            project_id=issue.project_id,
+            brief_id=issue.brief_id,
+            brief_version_id=issue.brief_version_id,
+            issue_type=issue.issue_type.value,
+            field_path=issue.field_path,
+            severity=issue.severity.value,
+            message=issue.message,
+            status=issue.status.value,
+            resolution_note=issue.resolution_note,
+            created_by_actor_subject=issue.created_by_actor_subject,
+            resolved_by_actor_subject=issue.resolved_by_actor_subject,
+            created_at=issue.created_at,
+            resolved_at=issue.resolved_at,
+            version=issue.version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(self.session, "requirement_issue_conflict", "issue is invalid")
+        return _requirement_issue(record)
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        brief_id: UUID,
+        version_id: UUID,
+        issue_id: UUID,
+    ) -> RequirementIssue | None:
+        record = self.session.scalar(
+            self._scoped_query(
+                organization_id, workspace_id, project_id, brief_id, version_id
+            ).where(RequirementIssueRecord.id == issue_id)
+        )
+        return _requirement_issue(record) if record is not None else None
+
+    def list(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        brief_id: UUID,
+        version_id: UUID,
+    ) -> list[RequirementIssue]:
+        records = self.session.scalars(
+            self._scoped_query(
+                organization_id, workspace_id, project_id, brief_id, version_id
+            ).order_by(RequirementIssueRecord.created_at, RequirementIssueRecord.id)
+        ).all()
+        return [_requirement_issue(record) for record in records]
+
+    def count_open_blocking(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        brief_id: UUID,
+        version_id: UUID,
+    ) -> int:
+        count = self.session.scalar(
+            select(func.count())
+            .select_from(RequirementIssueRecord)
+            .where(
+                RequirementIssueRecord.organization_id == organization_id,
+                RequirementIssueRecord.workspace_id == workspace_id,
+                RequirementIssueRecord.project_id == project_id,
+                RequirementIssueRecord.brief_id == brief_id,
+                RequirementIssueRecord.brief_version_id == version_id,
+                RequirementIssueRecord.status == RequirementIssueStatus.OPEN.value,
+                RequirementIssueRecord.severity == RequirementIssueSeverity.BLOCKING.value,
+            )
+        )
+        return int(count or 0)
+
+    def update(
+        self,
+        issue: RequirementIssue,
+        *,
+        expected_version: int,
+        expected_status: RequirementIssueStatus,
+    ) -> RequirementIssue:
+        record = self.session.scalar(
+            update(RequirementIssueRecord)
+            .where(
+                RequirementIssueRecord.organization_id == issue.organization_id,
+                RequirementIssueRecord.workspace_id == issue.workspace_id,
+                RequirementIssueRecord.project_id == issue.project_id,
+                RequirementIssueRecord.brief_id == issue.brief_id,
+                RequirementIssueRecord.brief_version_id == issue.brief_version_id,
+                RequirementIssueRecord.id == issue.id,
+                RequirementIssueRecord.version == expected_version,
+                RequirementIssueRecord.status == expected_status.value,
+            )
+            .values(
+                status=issue.status.value,
+                resolution_note=issue.resolution_note,
+                resolved_by_actor_subject=issue.resolved_by_actor_subject,
+                resolved_at=issue.resolved_at,
+                version=issue.version,
+            )
+            .returning(RequirementIssueRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("requirement issue changed before update")
+        return _requirement_issue(record)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        brief_id: UUID,
+        version_id: UUID,
+    ) -> Select[tuple[RequirementIssueRecord]]:
+        return select(RequirementIssueRecord).where(
+            RequirementIssueRecord.organization_id == organization_id,
+            RequirementIssueRecord.workspace_id == workspace_id,
+            RequirementIssueRecord.project_id == project_id,
+            RequirementIssueRecord.brief_id == brief_id,
+            RequirementIssueRecord.brief_version_id == version_id,
+        )
+
+
 class SqlAlchemyAuditEventRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -254,6 +613,21 @@ class SqlAlchemyAuditEventRepository:
                 AuditEventRecord.workspace_id == workspace_id,
                 AuditEventRecord.aggregate_type == "project",
                 AuditEventRecord.aggregate_id == project_id,
+            )
+            .order_by(AuditEventRecord.occurred_at, AuditEventRecord.id)
+        ).all()
+        return [_audit_event(record) for record in records]
+
+    def list_for_brief(
+        self, organization_id: UUID, workspace_id: UUID, brief_id: UUID
+    ) -> list[AuditEvent]:
+        records = self.session.scalars(
+            select(AuditEventRecord)
+            .where(
+                AuditEventRecord.organization_id == organization_id,
+                AuditEventRecord.workspace_id == workspace_id,
+                AuditEventRecord.aggregate_type == "brief",
+                AuditEventRecord.aggregate_id == brief_id,
             )
             .order_by(AuditEventRecord.occurred_at, AuditEventRecord.id)
         ).all()
@@ -310,6 +684,68 @@ def _project(record: ProjectRecord) -> Project:
         created_by_actor_subject=record.created_by_actor_subject,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        version=record.version,
+    )
+
+
+def _brief(record: BriefRecord) -> Brief:
+    return Brief(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        title=record.title,
+        status=BriefStatus(record.status),
+        current_version_id=record.current_version_id,
+        latest_version_number=record.latest_version_number,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        version=record.version,
+    )
+
+
+def _brief_version(record: BriefVersionRecord) -> BriefVersion:
+    return BriefVersion(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        brief_id=record.brief_id,
+        version_number=record.version_number,
+        lifecycle_state=BriefVersionLifecycle(record.lifecycle_state),
+        structured_content=record.structured_content,
+        source_type=BriefSourceType(record.source_type),
+        source_reference=record.source_reference,
+        change_summary=record.change_summary,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        submitted_for_review_at=record.submitted_for_review_at,
+        approved_at=record.approved_at,
+        approved_by_actor_subject=record.approved_by_actor_subject,
+        supersedes_version_id=record.supersedes_version_id,
+        content_schema_version=record.content_schema_version,
+    )
+
+
+def _requirement_issue(record: RequirementIssueRecord) -> RequirementIssue:
+    return RequirementIssue(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        brief_id=record.brief_id,
+        brief_version_id=record.brief_version_id,
+        issue_type=RequirementIssueType(record.issue_type),
+        field_path=record.field_path,
+        severity=RequirementIssueSeverity(record.severity),
+        message=record.message,
+        status=RequirementIssueStatus(record.status),
+        resolution_note=record.resolution_note,
+        created_by_actor_subject=record.created_by_actor_subject,
+        resolved_by_actor_subject=record.resolved_by_actor_subject,
+        created_at=record.created_at,
+        resolved_at=record.resolved_at,
         version=record.version,
     )
 

@@ -1,0 +1,66 @@
+{
+  "schema_version": "1.0.0",
+  "objective": { "primary_goal": null, "secondary_goals": [], "desired_action": null },
+  "audience": {
+    "primary_audience": null,
+    "secondary_audiences": [],
+    "geography": [],
+    "language": [],
+    "audience_insights": []
+  },
+  "offer": { "offer_details": null, "mandatory_claims": [], "prohibited_claims": [] },
+  "product": {
+    "product_name": null,
+    "product_category": null,
+    "key_features": [],
+    "key_benefits": [],
+    "proof_points": []
+  },
+  "brand": {
+    "brand_name": null,
+    "tone": [],
+    "personality": [],
+    "visual_guidelines": [],
+    "mandatory_elements": [],
+    "prohibited_elements": []
+  },
+  "channels": [],
+  "deliverables": {
+    "aspect_ratios": [],
+    "duration_seconds": [],
+    "deliverable_count": 1,
+    "locale_variants": [],
+    "caption_requirements": null,
+    "audio_requirements": null
+  },
+  "creative_constraints": {
+    "required_message": null,
+    "call_to_action": null,
+    "opening_hook_requirements": [],
+    "narrative_preferences": [],
+    "reference_styles": [],
+    "prohibited_themes": []
+  },
+  "production_constraints": {
+    "available_assets": [],
+    "required_assets": [],
+    "talent_constraints": [],
+    "location_constraints": [],
+    "deadline": null,
+    "budget_range": { "currency": null, "minimum": null, "maximum": null },
+    "model_or_tool_constraints": []
+  },
+  "legal_and_compliance": {
+    "disclaimer_requirements": [],
+    "regulated_category": "financial_services",
+    "claim_substantiation_notes": [],
+    "usage_rights_notes": null
+  },
+  "references": [],
+  "success_criteria": {
+    "business_metrics": [],
+    "creative_metrics": [],
+    "evaluation_notes": null
+  },
+  "open_questions": []
+}

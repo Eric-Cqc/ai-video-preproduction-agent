@@ -1,7 +1,21 @@
 """Core tenant and Project domain rules."""
 
+from services.api.app.domain.brief import (
+    Brief,
+    BriefSourceType,
+    BriefStatus,
+    BriefVersion,
+    BriefVersionLifecycle,
+    RequirementIssue,
+    RequirementIssueSeverity,
+    RequirementIssueStatus,
+    RequirementIssueType,
+)
 from services.api.app.domain.errors import (
+    ApprovalBlocked,
     DomainError,
+    InvalidBriefMutation,
+    InvalidBriefTransition,
     InvalidProjectMutation,
     InvalidProjectTransition,
     VersionConflict,
@@ -20,8 +34,16 @@ from services.api.app.domain.models import (
 )
 
 __all__ = [
+    "ApprovalBlocked",
     "AuditEvent",
+    "Brief",
+    "BriefSourceType",
+    "BriefStatus",
+    "BriefVersion",
+    "BriefVersionLifecycle",
     "DomainError",
+    "InvalidBriefMutation",
+    "InvalidBriefTransition",
     "InvalidProjectMutation",
     "InvalidProjectTransition",
     "Membership",
@@ -31,6 +53,10 @@ __all__ = [
     "OrganizationStatus",
     "Project",
     "ProjectStatus",
+    "RequirementIssue",
+    "RequirementIssueSeverity",
+    "RequirementIssueStatus",
+    "RequirementIssueType",
     "VersionConflict",
     "Workspace",
     "WorkspaceStatus",

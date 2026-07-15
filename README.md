@@ -1,29 +1,30 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone establishes tenant-aware PostgreSQL persistence and a minimal Project container; it does not generate, edit, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone establishes a tenant-aware, structured, immutable-version Brief foundation inside the existing Project container; it does not generate, edit, render, publish, or deliver video.
 
 ## Current capabilities
 
 - Next.js foundation status page and canonical cross-language health contract.
-- FastAPI health plus minimal Organization, Workspace, Membership, Project, lifecycle, and Project audit endpoints.
+- FastAPI health plus Organization, Workspace, Membership, Project and versioned Brief foundation endpoints.
 - PostgreSQL 17 schema managed by Alembic, with composite tenant constraints and partial membership indexes.
 - Tenant-scoped repositories, one application Unit of Work, atomic mutation/audit writes, and Project optimistic concurrency.
+- Canonical Structured Brief v1 JSON Schema, immutable BriefVersion snapshots, deterministic requirement issues, explicit review/approval, and Brief optimistic concurrency.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
-There is no Brief processing, upload, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+There is no file upload or parsing, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
 
 ## Repository layout
 
 ```text
 apps/web/                         Next.js foundation status
-services/api/app/domain/         Project lifecycle and domain records
+services/api/app/domain/         Project and versioned Brief domain rules
 services/api/app/application/    tenant use cases, repository ports, UoW port
 services/api/app/infrastructure/ SQLAlchemy/PostgreSQL adapters
 services/api/app/presentation/   request context, schemas, routes, error boundary
 services/worker/                  one-shot Worker readiness process
-packages/contracts/               canonical health schema and validators
+packages/contracts/               canonical health and Structured Brief schemas
 packages/model-registry/          minimal future Adapter boundary
 infra/migrations/                 Alembic migration history
 infra/docker/                     optional local PostgreSQL 17 only
@@ -102,7 +103,7 @@ Persistence routes require development-only context headers:
 
 Organization bootstrap requires only `X-Actor-Subject`; it atomically creates the Organization and initial owner Membership. The headers are accepted only when `APP_ENVIRONMENT` is `local`, `test`, or `ci`. They are spoofable context injection, **not authentication**, and are rejected in every other environment.
 
-Protected resources use opaque 404 behavior. A Project ID alone is never sufficient; path, headers, Organization, Workspace, and active Membership must all agree.
+Protected resources use opaque 404 behavior. A Project/Brief/Version ID alone is never sufficient; path, headers, Organization, Workspace, parent ownership and active Membership must all agree.
 
 ## Minimal API surface
 
@@ -113,8 +114,13 @@ Protected resources use opaque 404 behavior. A Project ID alone is never suffici
 - `POST .../projects/{project_id}/activate`
 - `POST .../projects/{project_id}/archive`
 - `GET .../projects/{project_id}/audit-events`
+- `POST/GET .../projects/{project_id}/briefs`
+- `GET .../briefs/{brief_id}` and `POST/GET .../versions`
+- explicit `submit`, `approve`, `archive`, issue create/resolve/dismiss, and Brief audit reads
 
 Project PATCH only accepts `name`, `description`, and `expected_version`. Status changes use explicit lifecycle endpoints. Stale versions, invalid lifecycle changes, and slug conflicts return 409. Errors use `{error: {code, message, correlation_id}}` and never expose raw SQL or stack traces.
+
+Brief content is accepted only as canonical Structured Brief v1 and is never PATCHed in place. Every content change creates a complete immutable snapshot and atomically advances the aggregate pointer using the expected Brief version and expected current-version ID. Members may draft, version, submit and manage issues; only owner/admin may approve or archive; viewers are read-only. Open blocking issues prevent approval.
 
 ## Validation
 
@@ -143,6 +149,7 @@ Use `make` as the public developer entry point; do not run bare `node`, `npm`, o
 | `API_HOST` / `API_PORT`         | `127.0.0.1` / `8000`            | API bind address                            |
 | `API_ALLOWED_CORS_ORIGINS`      | `http://localhost:3000`         | Explicit origins; wildcard rejected         |
 | `API_LOG_LEVEL`                 | `INFO`                          | Structured API log level                    |
+| `API_MAX_REQUEST_BYTES`         | `262144`                        | API Content-Length guard                    |
 | `DATABASE_URL`                  | repository-local PostgreSQL URL | Application/migration database              |
 | `TEST_DATABASE_URL`             | `foundation_test` URL           | Isolated persistence-test database          |
 | `DATABASE_POOL_SIZE`            | `5`                             | SQLAlchemy pool size                        |
@@ -156,6 +163,6 @@ The checked-in values are local test credentials only. Production requires an ex
 
 ## Architecture and milestone status
 
-The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation. The execution record is [tenant-persistence-foundation-plan.md](docs/development/plans/tenant-persistence-foundation-plan.md).
+The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation. The execution record is [versioned-brief-foundation-plan.md](docs/development/plans/versioned-brief-foundation-plan.md).
 
-The next intended milestone is a versioned Brief contract and domain foundation. It must preserve tenant, audit, and structured-schema rules and must not add AI generation unless separately approved.
+The next intended milestone is controlled Brief ingestion at the application boundary, beginning with explicitly approved deterministic structured input—not autonomous AI generation. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; file parsing, uploads or AI require a separately reviewed scope and ADR.

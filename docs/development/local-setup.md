@@ -19,7 +19,7 @@
 
 ## 安全重置测试数据
 
-`make db-reset-test` 只读取 `TEST_DATABASE_URL`，并在 database 名不以 `_test` 结尾时拒绝执行。它只截断第三阶段五张业务表，不删除 database、migration metadata、volume 或其他项目资源。普通 `make check` 不执行 reset。
+`make db-reset-test` 只读取 `TEST_DATABASE_URL`，并在 database 名不以 `_test` 结尾时拒绝执行。它只截断当前八张业务表，不删除 database、migration metadata、volume 或其他项目资源。普通 `make check` 不执行 reset。
 
 完整命令和环境变量见根 README。没有 SQLite fallback、云数据库、Supabase 或外部 Provider。
 
