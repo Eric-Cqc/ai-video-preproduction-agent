@@ -20,6 +20,7 @@ from services.api.app.application.errors import (
 )
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.services import TenantApplicationService
+from services.api.app.application.source_asset_services import SourceAssetApplicationService
 from services.api.app.config import ApiSettings, get_api_settings
 from services.api.app.domain import (
     ApprovalBlocked,
@@ -28,6 +29,7 @@ from services.api.app.domain import (
     InvalidBriefTransition,
     InvalidProjectMutation,
     InvalidProjectTransition,
+    InvalidSourceAssetMutation,
     VersionConflict,
 )
 from services.api.app.infrastructure.database import create_database_engine, create_session_factory
@@ -37,6 +39,7 @@ from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
 from services.api.app.presentation.brief_routes import router as brief_router
 from services.api.app.presentation.ingestion_routes import router as ingestion_router
 from services.api.app.presentation.routes import router as tenant_router
+from services.api.app.presentation.source_asset_routes import router as source_asset_router
 from services.api.app.routes.health import router as health_router
 
 logger = logging.getLogger(__name__)
@@ -94,6 +97,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.ingestion_application_service = BriefIngestionApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.source_asset_application_service = SourceAssetApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_cors_origins,
@@ -113,6 +119,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(tenant_router)
     app.include_router(brief_router)
     app.include_router(ingestion_router)
+    app.include_router(source_asset_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -174,9 +181,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             )
             else 400
         )
-        if isinstance(error, (InvalidProjectMutation, InvalidBriefMutation)) and "archived" in str(
-            error
-        ):
+        if isinstance(
+            error, (InvalidProjectMutation, InvalidBriefMutation, InvalidSourceAssetMutation)
+        ) and "archived" in str(error):
             status_code = 409
         return error_response(request, status_code, error.code, str(error))
 

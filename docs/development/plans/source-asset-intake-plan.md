@@ -1,6 +1,6 @@
 # Controlled source asset intake plan
 
-- Status: Milestone C complete; no dependencies added, no API or Brief attachment implementation started.
+- Status: Milestone E complete; no dependencies or lockfile changes, no commit or push.
 - Scope: tenant- and Project-scoped metadata identity only. No bytes, storage, upload, parsing, OCR, URL retrieval, AI, Provider, Job, queue, or UI.
 
 ## Frozen implementation choices
@@ -10,6 +10,8 @@
 3. Metadata is bounded: declared byte size is 1 through 104,857,600; document media types exclude images; filename and provenance are display/opaque metadata only.
 4. Source mutations reuse the existing scoped PostgreSQL reservation/finalize pattern in a bounded source-operation record. There is no generic idempotency framework.
 5. Accepted Brief ingestion may attach ordered, tenant/Project-scoped SourceAssetVersions through one immutable relation. The attachment list contributes to the existing ingestion digest.
+6. The accepted-only attachment rule is enforced by a repository conditional insert against an accepted ingestion row; it is not represented by an unsafe cross-table PostgreSQL CHECK. Finalize, attachment insert and audit remain one UoW transaction.
+7. Every accepted SourceAsset operation, including archive, records both the aggregate and its immutable current Version. Revision `f1a2b3c4d5e6` tightened the outcome CHECK after the first implementation exposed that replay requires both identifiers.
 
 ## Milestones
 
@@ -31,12 +33,13 @@
 
 ### D — API and Brief linkage
 
-- [ ] Add bounded SourceAsset APIs and optional ordered Brief ingestion attachments.
-- [ ] Keep opaque 404, restricted roles, bounded responses and safe errors.
+- [x] Add bounded SourceAsset APIs and optional ordered Brief ingestion attachments.
+- [x] Keep opaque 404, restricted roles, bounded responses and safe errors.
 
 ### E — verification and documentation
 
-- [ ] Add real PostgreSQL constraint/concurrency/transaction/isolation tests; update docs and run all gates.
+- [x] Add real PostgreSQL constraint/concurrency/transaction/isolation tests; update docs and run all gates.
+- [x] Validate downgrade/re-upgrade and empty PostgreSQL base → head; metadata drift remains empty.
 
 ## Reassessment triggers
 

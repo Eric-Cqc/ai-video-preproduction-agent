@@ -358,6 +358,44 @@ class SourceAssetApplicationService:
             self._require_project_access(uow, context, project_id, READ_ROLES)
             return self._require_asset(uow, context, project_id, source_asset_id)
 
+    def list_assets(
+        self, context: TenantContext, project_id: UUID, *, limit: int, offset: int
+    ) -> list[SourceAsset]:
+        with self.uow_factory() as uow:
+            self._require_project_access(uow, context, project_id, READ_ROLES)
+            return uow.source_assets.list(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                limit=limit,
+                offset=offset,
+            )
+
+    def get_version(
+        self,
+        context: TenantContext,
+        project_id: UUID,
+        source_asset_id: UUID,
+        version_id: UUID,
+    ) -> SourceAssetVersion:
+        with self.uow_factory() as uow:
+            self._require_project_access(uow, context, project_id, READ_ROLES)
+            self._require_asset(uow, context, project_id, source_asset_id)
+            return self._require_version(uow, context, project_id, source_asset_id, version_id)
+
+    def list_versions(
+        self, context: TenantContext, project_id: UUID, source_asset_id: UUID
+    ) -> list[SourceAssetVersion]:
+        with self.uow_factory() as uow:
+            self._require_project_access(uow, context, project_id, READ_ROLES)
+            self._require_asset(uow, context, project_id, source_asset_id)
+            return uow.source_asset_versions.list_for_asset(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                source_asset_id,
+            )
+
     def _reserve_or_replay(
         self,
         uow: UnitOfWork,

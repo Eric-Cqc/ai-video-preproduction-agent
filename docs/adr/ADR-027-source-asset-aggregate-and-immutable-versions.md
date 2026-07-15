@@ -9,3 +9,7 @@
 ## Boundary
 
 This records declared metadata and content identity only. It does not receive, retain, parse or verify bytes.
+
+## Implementation clarification
+
+There is no repository update method or presentation PATCH route for `SourceAssetVersion`. Create-version CAS includes tenant scope, aggregate ID, expected aggregate version and expected current pointer. Archive changes only the `SourceAsset` aggregate, not its current or historical Version.

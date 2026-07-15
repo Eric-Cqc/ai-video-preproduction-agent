@@ -24,6 +24,8 @@ from services.api.app.domain.errors import (
 from services.api.app.domain.ingestion import (
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
+    BriefIngestionSourceAssetRelationType,
     BriefIngestionSourceType,
     BriefIngestionStatus,
 )
@@ -62,6 +64,8 @@ __all__ = [
     "BriefVersionLifecycle",
     "BriefIngestion",
     "BriefIngestionOperation",
+    "BriefIngestionSourceAsset",
+    "BriefIngestionSourceAssetRelationType",
     "BriefIngestionSourceType",
     "BriefIngestionStatus",
     "DomainError",

@@ -20,6 +20,12 @@ class BriefIngestionStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class BriefIngestionSourceAssetRelationType(StrEnum):
+    PRIMARY_SOURCE = "primary_source"
+    SUPPORTING_SOURCE = "supporting_source"
+    REFERENCE = "reference"
+
+
 @dataclass(frozen=True, slots=True)
 class BriefIngestion:
     id: UUID
@@ -42,3 +48,18 @@ class BriefIngestion:
     completed_at: datetime | None
     correlation_id: str
     version: int
+
+
+@dataclass(frozen=True, slots=True)
+class BriefIngestionSourceAsset:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    brief_ingestion_id: UUID
+    source_asset_id: UUID
+    source_asset_version_id: UUID
+    relation_type: BriefIngestionSourceAssetRelationType
+    position: int
+    attached_by_actor_subject: str
+    attached_at: datetime

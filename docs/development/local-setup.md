@@ -17,11 +17,13 @@
 
 修改 metadata 后使用 Alembic autogenerate 创建 revision，审查所有约束、部分索引、upgrade 和 downgrade，再运行 upgrade/check。不得修改已经共享或应用的 migration 来重写历史。
 
+当前 head 还包含 SourceAsset metadata 和 Brief ingestion attachment 约束。SourceAsset metadata 并不需要文件、object storage 或 Docker 以外的服务；Docker PostgreSQL 仅是可选的本地/测试数据库路径，不是唯一开发路径。
+
 ## 安全重置测试数据
 
 `make db-reset-test` 只读取 `TEST_DATABASE_URL`，并在 database 名不以 `_test` 结尾时拒绝执行。它只截断当前九张业务表，不删除 database、migration metadata、volume 或其他项目资源。普通 `make check` 不执行 reset。
 
-完整命令和环境变量见根 README。没有 SQLite fallback、云数据库、Supabase 或外部 Provider。
+完整命令和环境变量见根 README。没有 SQLite fallback、云数据库、Supabase、上传/对象存储或外部 Provider。
 
 `DATABASE_STATEMENT_TIMEOUT_MS` 默认 5000，应用到 PostgreSQL session，限制包括 idempotency unique-key wait 在内的单条 SQL；超时使当前 UoW rollback，不改变健康检查语义。
 

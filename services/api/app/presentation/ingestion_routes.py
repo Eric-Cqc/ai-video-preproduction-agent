@@ -8,6 +8,7 @@ from services.api.app.application.context import TenantContext
 from services.api.app.application.errors import InvalidRequest
 from services.api.app.application.ingestion_services import (
     BriefIngestionApplicationService,
+    BriefSourceAttachmentInput,
     IngestionResult,
 )
 from services.api.app.presentation.brief_routes import _bundle
@@ -15,6 +16,7 @@ from services.api.app.presentation.context import require_tenant_context
 from services.api.app.presentation.ingestion_schemas import (
     BriefIngestionCreate,
     BriefIngestionResponse,
+    BriefIngestionSourceAttachmentResponse,
     BriefVersionIngestionCreate,
 )
 
@@ -55,7 +57,29 @@ def _response(result: IngestionResult) -> BriefIngestionResponse:
         correlation_id=result.ingestion.correlation_id,
         replayed=result.replayed,
         result=_bundle(result.bundle),
+        source_attachments=[
+            BriefIngestionSourceAttachmentResponse(
+                source_asset_id=item.source_asset_id,
+                source_asset_version_id=item.source_asset_version_id,
+                relation_type=item.relation_type,
+                position=item.position,
+            )
+            for item in result.source_attachments
+        ],
     )
+
+
+def _attachments(
+    payload: BriefIngestionCreate | BriefVersionIngestionCreate,
+) -> list[BriefSourceAttachmentInput]:
+    return [
+        BriefSourceAttachmentInput(
+            source_asset_id=item.source_asset_id,
+            source_asset_version_id=item.source_asset_version_id,
+            relation_type=item.relation_type,
+        )
+        for item in payload.source_attachments
+    ]
 
 
 @router.post(
@@ -80,6 +104,7 @@ def create_brief_ingestion(
         source_type=payload.source_type,
         source_reference=payload.source_reference,
         change_summary=payload.change_summary,
+        source_attachments=_attachments(payload),
     )
     if result.replayed:
         response.status_code = status.HTTP_200_OK
@@ -112,6 +137,7 @@ def create_version_ingestion(
         source_type=payload.source_type,
         source_reference=payload.source_reference,
         change_summary=payload.change_summary,
+        source_attachments=_attachments(payload),
     )
     if result.replayed:
         response.status_code = status.HTTP_200_OK

@@ -6,6 +6,8 @@ AuditEvent 是产品级 mutation evidence：记录 actor subject、tenant、aggr
 
 Ingestion accepted audit 只记录 ingestion ID、operation、schema/source type、Brief version、issue count 和 aggregate version；不记录 key、digest、source reference 或 Structured Brief 正文。replay 不追加 audit。
 
+SourceAsset audit 只记录 asset ID、version number、media type、声明 byte size、aggregate version 和同 Project duplicate count；不记录 checksum、filename、source reference、external record ID、request digest 或 idempotency key。带 attachment 的 accepted Brief ingestion 额外记录一个有界 `brief_ingestion.source_attached` 摘要（ingestion ID、数量、relation type counts、distinct version count），不记录文件名、checksum、provenance 或完整 attachment ID 列表。attachment replay 不追加 audit。
+
 Worker self-check 保持零 handler 与结构化启动信息。没有 hosted logging、OpenTelemetry、production analytics 或全局 audit search。
 
 ## 冻结决定

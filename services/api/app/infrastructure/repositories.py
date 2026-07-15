@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, case, func, select, update
+from sqlalchemy import Select, case, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,6 +12,8 @@ from services.api.app.domain import (
     Brief,
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
+    BriefIngestionSourceAssetRelationType,
     BriefIngestionSourceType,
     BriefIngestionStatus,
     BriefSourceType,
@@ -44,6 +46,7 @@ from services.api.app.domain import (
 from services.api.app.infrastructure.models import (
     AuditEventRecord,
     BriefIngestionRecord,
+    BriefIngestionSourceAssetRecord,
     BriefRecord,
     BriefVersionRecord,
     MembershipRecord,
@@ -438,6 +441,73 @@ class SqlAlchemyBriefIngestionRepository:
             )
         )
         return _brief_ingestion(record) if record is not None else None
+
+
+class SqlAlchemyBriefIngestionSourceAssetRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_for_accepted_ingestion(
+        self, attachment: BriefIngestionSourceAsset
+    ) -> BriefIngestionSourceAsset:
+        columns = [
+            BriefIngestionSourceAssetRecord.id,
+            BriefIngestionSourceAssetRecord.organization_id,
+            BriefIngestionSourceAssetRecord.workspace_id,
+            BriefIngestionSourceAssetRecord.project_id,
+            BriefIngestionSourceAssetRecord.brief_ingestion_id,
+            BriefIngestionSourceAssetRecord.source_asset_id,
+            BriefIngestionSourceAssetRecord.source_asset_version_id,
+            BriefIngestionSourceAssetRecord.relation_type,
+            BriefIngestionSourceAssetRecord.position,
+            BriefIngestionSourceAssetRecord.attached_by_actor_subject,
+            BriefIngestionSourceAssetRecord.attached_at,
+        ]
+        values = select(
+            literal(attachment.id),
+            literal(attachment.organization_id),
+            literal(attachment.workspace_id),
+            literal(attachment.project_id),
+            literal(attachment.brief_ingestion_id),
+            literal(attachment.source_asset_id),
+            literal(attachment.source_asset_version_id),
+            literal(attachment.relation_type.value),
+            literal(attachment.position),
+            literal(attachment.attached_by_actor_subject),
+            literal(attachment.attached_at),
+        ).where(
+            BriefIngestionRecord.organization_id == attachment.organization_id,
+            BriefIngestionRecord.workspace_id == attachment.workspace_id,
+            BriefIngestionRecord.project_id == attachment.project_id,
+            BriefIngestionRecord.id == attachment.brief_ingestion_id,
+            BriefIngestionRecord.status == BriefIngestionStatus.ACCEPTED.value,
+        )
+        record = self.session.scalar(
+            insert(BriefIngestionSourceAssetRecord)
+            .from_select(columns, values)
+            .returning(BriefIngestionSourceAssetRecord)
+        )
+        if record is None:
+            raise ResourceConflict(
+                "brief ingestion source attachment requires an accepted ingestion",
+                code="brief_ingestion_attachment_conflict",
+            )
+        return _brief_ingestion_source_asset(record)
+
+    def list_for_ingestion(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_ingestion_id: UUID
+    ) -> list[BriefIngestionSourceAsset]:
+        records = self.session.scalars(
+            select(BriefIngestionSourceAssetRecord)
+            .where(
+                BriefIngestionSourceAssetRecord.organization_id == organization_id,
+                BriefIngestionSourceAssetRecord.workspace_id == workspace_id,
+                BriefIngestionSourceAssetRecord.project_id == project_id,
+                BriefIngestionSourceAssetRecord.brief_ingestion_id == brief_ingestion_id,
+            )
+            .order_by(BriefIngestionSourceAssetRecord.position)
+        ).all()
+        return [_brief_ingestion_source_asset(record) for record in records]
 
 
 class SqlAlchemyBriefVersionRepository:
@@ -849,7 +919,7 @@ class SqlAlchemySourceAssetOperationRepository:
         operation: SourceAssetOperation,
         *,
         source_asset_id: UUID,
-        source_asset_version_id: UUID | None,
+        source_asset_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
     ) -> SourceAssetOperation:
@@ -1158,6 +1228,24 @@ def _brief_ingestion(record: BriefIngestionRecord) -> BriefIngestion:
         completed_at=record.completed_at,
         correlation_id=record.correlation_id,
         version=record.version,
+    )
+
+
+def _brief_ingestion_source_asset(
+    record: BriefIngestionSourceAssetRecord,
+) -> BriefIngestionSourceAsset:
+    return BriefIngestionSourceAsset(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        brief_ingestion_id=record.brief_ingestion_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        relation_type=BriefIngestionSourceAssetRelationType(record.relation_type),
+        position=record.position,
+        attached_by_actor_subject=record.attached_by_actor_subject,
+        attached_at=record.attached_at,
     )
 
 

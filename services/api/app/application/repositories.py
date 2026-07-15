@@ -7,6 +7,7 @@ from services.api.app.domain import (
     Brief,
     BriefIngestion,
     BriefIngestionOperation,
+    BriefIngestionSourceAsset,
     BriefVersion,
     Membership,
     Organization,
@@ -104,6 +105,16 @@ class BriefIngestionRepository(Protocol):
         operation: BriefIngestionOperation,
         idempotency_key: str,
     ) -> BriefIngestion | None: ...
+
+
+class BriefIngestionSourceAssetRepository(Protocol):
+    def add_for_accepted_ingestion(
+        self, attachment: BriefIngestionSourceAsset
+    ) -> BriefIngestionSourceAsset: ...
+
+    def list_for_ingestion(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, brief_ingestion_id: UUID
+    ) -> list[BriefIngestionSourceAsset]: ...
 
 
 class BriefVersionRepository(Protocol):
@@ -210,7 +221,7 @@ class SourceAssetOperationRepository(Protocol):
         operation: SourceAssetOperation,
         *,
         source_asset_id: UUID,
-        source_asset_version_id: UUID | None,
+        source_asset_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
     ) -> SourceAssetOperation: ...

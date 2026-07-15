@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from threading import Barrier, Event
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -20,11 +22,13 @@ from services.api.app.domain import (
     AuditEvent,
     MembershipRole,
     SourceAssetOperation,
+    SourceAssetOperationStatus,
     SourceAssetOperationType,
     SourceAssetStatus,
     VersionConflict,
 )
 from services.api.app.infrastructure.database import SessionFactory
+from services.api.app.infrastructure.repositories import SqlAlchemySourceAssetOperationRepository
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 
 
@@ -323,6 +327,212 @@ def test_source_asset_idempotency_replay_conflict_and_later_aggregate_change(
     assert conflict.value.code == "idempotency_conflict"
     assert audit_count == 1
     assert reserved_count == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"source_reference": "external-record:changed"},
+        {"declared_created_at": datetime(2026, 1, 2, tzinfo=UTC)},
+    ],
+)
+def test_source_asset_create_digest_covers_all_provenance_metadata(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    overrides: dict[str, object],
+) -> None:
+    del clean_database
+    context, project_id = _bootstrap(persistence_session_factory)
+    service = _service(persistence_session_factory)
+    _create(service, context, project_id, key="metadata-digest-key")
+
+    with pytest.raises(ResourceConflict) as conflict:
+        _create(service, context, project_id, key="metadata-digest-key", **overrides)
+
+    assert conflict.value.code == "idempotency_conflict"
+
+
+def test_source_asset_version_digest_covers_expected_pointer(
+    persistence_session_factory: SessionFactory, clean_database: None
+) -> None:
+    del clean_database
+    context, project_id = _bootstrap(persistence_session_factory)
+    service = _service(persistence_session_factory)
+    created = _create(service, context, project_id)
+    service.create_version(
+        context,
+        project_id,
+        created.asset.id,
+        idempotency_key="version-digest-key",
+        expected_asset_version=created.asset.version,
+        expected_current_version_id=created.asset.current_version_id,
+        source_version_id=created.version.id,
+        original_filename="source-v2.pdf",
+        media_type="application/pdf",
+        byte_size=2048,
+        checksum_algorithm="sha256",
+        checksum_value="b" * 64,
+        source_type="api_declared",
+        source_reference=None,
+        external_record_id=None,
+        declared_created_at=None,
+    )
+
+    with pytest.raises(ResourceConflict) as conflict:
+        service.create_version(
+            context,
+            project_id,
+            created.asset.id,
+            idempotency_key="version-digest-key",
+            expected_asset_version=created.asset.version,
+            expected_current_version_id=uuid4(),
+            source_version_id=created.version.id,
+            original_filename="source-v2.pdf",
+            media_type="application/pdf",
+            byte_size=2048,
+            checksum_algorithm="sha256",
+            checksum_value="b" * 64,
+            source_type="api_declared",
+            source_reference=None,
+            external_record_id=None,
+            declared_created_at=None,
+        )
+
+    assert conflict.value.code == "idempotency_conflict"
+
+
+def test_concurrent_source_asset_create_replays_without_duplicate_mutation(
+    persistence_session_factory: SessionFactory, clean_database: None, database_engine: Engine
+) -> None:
+    del clean_database
+    context, project_id = _bootstrap(persistence_session_factory)
+    start = Barrier(2)
+
+    def create() -> SourceAssetResult:
+        assert start.wait(timeout=5) in (0, 1)
+        return _create(_service(persistence_session_factory), context, project_id, key="concurrent")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(create) for _ in range(2)]
+        results = [future.result(timeout=10) for future in futures]
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "SELECT (SELECT count(*) FROM source_assets), "
+                "(SELECT count(*) FROM source_asset_versions), "
+                "(SELECT count(*) FROM source_asset_operations WHERE status = 'accepted'), "
+                "(SELECT count(*) FROM source_asset_operations WHERE status = 'reserved'), "
+                "(SELECT count(*) FROM audit_events WHERE action = 'source_asset.created')"
+            )
+        ).one()
+    assert sorted(result.replayed for result in results) == [False, True]
+    assert results[0].asset.id == results[1].asset.id
+    assert tuple(counts) == (1, 1, 1, 0, 1)
+
+
+def test_concurrent_source_asset_version_create_has_one_successor(
+    persistence_session_factory: SessionFactory, clean_database: None, database_engine: Engine
+) -> None:
+    del clean_database
+    context, project_id = _bootstrap(persistence_session_factory)
+    service = _service(persistence_session_factory)
+    created = _create(service, context, project_id)
+    start = Barrier(2)
+
+    def create_version() -> SourceAssetResult:
+        assert start.wait(timeout=5) in (0, 1)
+        return _service(persistence_session_factory).create_version(
+            context,
+            project_id,
+            created.asset.id,
+            idempotency_key="concurrent-version",
+            expected_asset_version=created.asset.version,
+            expected_current_version_id=created.asset.current_version_id,
+            source_version_id=created.version.id,
+            original_filename="source-v2.pdf",
+            media_type="application/pdf",
+            byte_size=2048,
+            checksum_algorithm="sha256",
+            checksum_value="b" * 64,
+            source_type="api_declared",
+            source_reference=None,
+            external_record_id=None,
+            declared_created_at=None,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(create_version) for _ in range(2)]
+        results = [future.result(timeout=10) for future in futures]
+
+    with database_engine.connect() as connection:
+        counts = connection.execute(
+            text(
+                "SELECT (SELECT count(*) FROM source_asset_versions), "
+                "(SELECT count(*) FROM source_asset_operations WHERE status = 'accepted'), "
+                "(SELECT count(*) FROM source_asset_operations WHERE status = 'reserved'), "
+                "(SELECT count(*) FROM audit_events WHERE action = 'source_asset.version_created')"
+            )
+        ).one()
+    assert sorted(result.replayed for result in results) == [False, True]
+    assert results[0].version.id == results[1].version.id
+    assert tuple(counts) == (2, 2, 0, 1)
+
+
+def test_source_asset_reservation_rolls_back_and_allows_a_new_winner(
+    persistence_session_factory: SessionFactory, clean_database: None, database_engine: Engine
+) -> None:
+    del clean_database
+    context, project_id = _bootstrap(persistence_session_factory)
+    winner_reserved, loser_started = Event(), Event()
+
+    def reservation() -> SourceAssetOperation:
+        now = datetime.now(UTC)
+        return SourceAssetOperation(
+            id=uuid4(),
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            source_asset_id=None,
+            source_asset_version_id=None,
+            operation=SourceAssetOperationType.CREATE_SOURCE_ASSET,
+            idempotency_key="rollback-takeover",
+            request_digest="a" * 64,
+            status=SourceAssetOperationStatus.RESERVED,
+            submitted_by_actor_subject=context.actor_subject,
+            submitted_at=now,
+            completed_at=None,
+            correlation_id=context.correlation_id,
+            version=1,
+        )
+
+    def winner() -> None:
+        with persistence_session_factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '5s'"))
+            assert (
+                SqlAlchemySourceAssetOperationRepository(session).reserve(reservation()) is not None
+            )
+            winner_reserved.set()
+            assert loser_started.wait(5)
+            session.rollback()
+
+    def loser() -> SourceAssetOperation | None:
+        assert winner_reserved.wait(5)
+        with persistence_session_factory() as session:
+            session.execute(text("SET LOCAL statement_timeout = '5s'"))
+            loser_started.set()
+            won = SqlAlchemySourceAssetOperationRepository(session).reserve(reservation())
+            session.rollback()
+            return won
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        winner_future = executor.submit(winner)
+        loser_future = executor.submit(loser)
+        winner_future.result(timeout=10)
+        assert loser_future.result(timeout=10) is not None
+
+    with database_engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM source_asset_operations")) == 0
 
 
 def test_source_asset_idempotency_scope_is_project_and_operation_specific(

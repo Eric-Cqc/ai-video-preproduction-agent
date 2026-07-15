@@ -6,9 +6,17 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
 from services.api.app.application.context import ActorContext, OrganizationContext, TenantContext
+from services.api.app.application.errors import ResourceConflict
 from services.api.app.application.services import TenantApplicationService
+from services.api.app.domain import BriefIngestionSourceAsset, BriefIngestionSourceAssetRelationType
 from services.api.app.infrastructure.database import SessionFactory
+from services.api.app.infrastructure.repositories import (
+    SqlAlchemyBriefIngestionSourceAssetRepository,
+)
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
+from services.api.tests.test_ingestion_concurrency import _setup as _setup_brief
+from services.api.tests.test_ingestion_constraints import INSERT as INSERT_INGESTION
+from services.api.tests.test_ingestion_constraints import _row as _ingestion_row
 
 
 def _setup_project(session_factory: SessionFactory) -> tuple[TenantContext, UUID]:
@@ -110,6 +118,14 @@ INSERT_OPERATION = text(
     ":submitted_by_actor_subject, :submitted_at, :completed_at, :correlation_id, :version)"
 )
 
+INSERT_ATTACHMENT = text(
+    "INSERT INTO brief_ingestion_source_assets (id, organization_id, workspace_id, project_id, "
+    "brief_ingestion_id, source_asset_id, source_asset_version_id, relation_type, position, "
+    "attached_by_actor_subject, attached_at) VALUES (:id, :organization_id, :workspace_id, "
+    ":project_id, :brief_ingestion_id, :source_asset_id, :source_asset_version_id, "
+    ":relation_type, :position, :attached_by_actor_subject, :attached_at)"
+)
+
 
 def _insert_valid_asset(
     engine: Engine, context: TenantContext, project_id: UUID
@@ -145,6 +161,40 @@ def _operation_row(
         "correlation_id": "source-operation-constraint",
         "version": 1,
     }
+
+
+def _attachment_row(
+    context: TenantContext,
+    project_id: UUID,
+    ingestion_id: UUID,
+    asset_id: UUID,
+    version_id: UUID,
+) -> dict[str, object]:
+    return {
+        "id": uuid4(),
+        "organization_id": context.organization_id,
+        "workspace_id": context.workspace_id,
+        "project_id": project_id,
+        "brief_ingestion_id": ingestion_id,
+        "source_asset_id": asset_id,
+        "source_asset_version_id": version_id,
+        "relation_type": "primary_source",
+        "position": 0,
+        "attached_by_actor_subject": context.actor_subject,
+        "attached_at": datetime.now(UTC),
+    }
+
+
+def _insert_accepted_ingestion(
+    engine: Engine, session_factory: SessionFactory
+) -> tuple[TenantContext, UUID, UUID]:
+    context, project_id, brief_id, version_id = _setup_brief(session_factory)
+    row = _ingestion_row(
+        context.organization_id, context.workspace_id, project_id, brief_id, version_id
+    )
+    with engine.begin() as connection:
+        connection.execute(INSERT_INGESTION, row)
+    return context, project_id, row["id"]  # type: ignore[return-value]
 
 
 @pytest.mark.parametrize(
@@ -338,3 +388,173 @@ def test_source_asset_operation_scoped_unique_constraint(
     other_operation = dict(row, id=uuid4(), operation="archive_source_asset")
     with database_engine.begin() as connection:
         connection.execute(INSERT_OPERATION, other_operation)
+
+
+@pytest.mark.parametrize("operation", ["create_source_asset", "archive_source_asset"])
+def test_source_asset_operation_requires_a_version_for_every_accepted_outcome(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+    operation: str,
+) -> None:
+    del clean_database
+    context, project_id = _setup_project(persistence_session_factory)
+    asset_id, version_id = _insert_valid_asset(database_engine, context, project_id)
+    row = _operation_row(context, project_id, asset_id, version_id)
+    row.update(operation=operation, source_asset_version_id=None)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_OPERATION, row)
+
+
+def test_source_asset_operation_composite_foreign_keys_reject_mismatched_outcomes(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+) -> None:
+    del clean_database
+    context_a, project_a = _setup_project(persistence_session_factory)
+    context_b, project_b = _setup_project(persistence_session_factory)
+    asset_a, version_a = _insert_valid_asset(database_engine, context_a, project_a)
+    asset_b, version_b = _insert_valid_asset(database_engine, context_b, project_b)
+
+    cross_tenant = _operation_row(context_a, project_a, asset_b, version_b)
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_OPERATION, cross_tenant)
+
+    _, version_c = _insert_valid_asset(database_engine, context_a, project_a)
+    mismatched_asset_version = _operation_row(context_a, project_a, asset_a, version_c)
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_OPERATION, mismatched_asset_version)
+
+    assert version_a is not None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"relation_type": "invalid"},
+        {"position": -1},
+    ],
+)
+def test_brief_ingestion_source_attachment_checks_reject_invalid_rows(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+    overrides: dict[str, object],
+) -> None:
+    del clean_database
+    context, project_id, ingestion_id = _insert_accepted_ingestion(
+        database_engine, persistence_session_factory
+    )
+    asset_id, version_id = _insert_valid_asset(database_engine, context, project_id)
+    row = _attachment_row(context, project_id, ingestion_id, asset_id, version_id)
+    row.update(overrides)
+
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, row)
+
+
+def test_brief_ingestion_source_attachment_foreign_keys_and_unique_constraints(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+) -> None:
+    del clean_database
+    context_a, project_a, ingestion_a = _insert_accepted_ingestion(
+        database_engine, persistence_session_factory
+    )
+    context_b, project_b, ingestion_b = _insert_accepted_ingestion(
+        database_engine, persistence_session_factory
+    )
+    asset_a, version_a = _insert_valid_asset(database_engine, context_a, project_a)
+    asset_b, version_b = _insert_valid_asset(database_engine, context_b, project_b)
+
+    valid = _attachment_row(context_a, project_a, ingestion_a, asset_a, version_a)
+    with database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, valid)
+
+    duplicate = dict(valid, id=uuid4())
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, duplicate)
+
+    wrong_project_ingestion = _attachment_row(context_a, project_a, ingestion_b, asset_a, version_a)
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, wrong_project_ingestion)
+
+    cross_tenant_asset = _attachment_row(context_a, project_a, ingestion_a, asset_b, version_b)
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, cross_tenant_asset)
+
+    other_project = TenantApplicationService(
+        lambda: SqlAlchemyUnitOfWork(persistence_session_factory)
+    ).create_project(context_a, name="Other Project", description=None)
+    other_project_asset, other_project_version = _insert_valid_asset(
+        database_engine, context_a, other_project.id
+    )
+    wrong_project_asset = _attachment_row(
+        context_a, project_a, ingestion_a, other_project_asset, other_project_version
+    )
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, wrong_project_asset)
+
+    mismatched_version = _attachment_row(context_a, project_a, ingestion_a, asset_a, version_b)
+    mismatched_version["position"] = 1
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, mismatched_version)
+
+    position_collision = _attachment_row(context_a, project_a, ingestion_a, asset_a, version_a)
+    position_collision.update(id=uuid4(), relation_type="reference")
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, position_collision)
+
+    missing_ingestion = _attachment_row(context_a, project_a, uuid4(), asset_a, version_a)
+    missing_ingestion["position"] = 1
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, missing_ingestion)
+
+    missing_version = _attachment_row(context_a, project_a, ingestion_a, asset_a, uuid4())
+    missing_version["position"] = 1
+    with pytest.raises(IntegrityError), database_engine.begin() as connection:
+        connection.execute(INSERT_ATTACHMENT, missing_version)
+
+
+def test_attachment_repository_requires_an_accepted_ingestion(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+) -> None:
+    del clean_database
+    context, project_id, brief_id, version_id = _setup_brief(persistence_session_factory)
+    reserved = _ingestion_row(
+        context.organization_id, context.workspace_id, project_id, brief_id, version_id
+    )
+    reserved.update(
+        brief_id=None,
+        brief_version_id=None,
+        status="reserved",
+        completed_at=None,
+    )
+    with database_engine.begin() as connection:
+        connection.execute(INSERT_INGESTION, reserved)
+    asset_id, asset_version_id = _insert_valid_asset(database_engine, context, project_id)
+
+    with persistence_session_factory() as session:
+        repository = SqlAlchemyBriefIngestionSourceAssetRepository(session)
+        attachment = BriefIngestionSourceAsset(
+            id=uuid4(),
+            organization_id=context.organization_id,
+            workspace_id=context.workspace_id,
+            project_id=project_id,
+            brief_ingestion_id=reserved["id"],  # type: ignore[arg-type]
+            source_asset_id=asset_id,
+            source_asset_version_id=asset_version_id,
+            relation_type=BriefIngestionSourceAssetRelationType.PRIMARY_SOURCE,
+            position=0,
+            attached_by_actor_subject=context.actor_subject,
+            attached_at=datetime.now(UTC),
+        )
+        with pytest.raises(ResourceConflict, match="accepted ingestion"):
+            repository.add_for_accepted_ingestion(attachment)
+        assert session.scalar(text("SELECT count(*) FROM brief_ingestion_source_assets")) == 0
+        session.rollback()

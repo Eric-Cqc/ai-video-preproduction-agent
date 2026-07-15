@@ -400,6 +400,13 @@ class BriefIngestionRecord(Base):
             "organization_id",
             "workspace_id",
             "project_id",
+            "id",
+            name="uq_brief_ingestions_tenant_project_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
             "operation",
             "idempotency_key",
             name="uq_brief_ingestions_idempotency",
@@ -474,6 +481,96 @@ class BriefIngestionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
+class BriefIngestionSourceAssetRecord(Base):
+    __tablename__ = "brief_ingestion_source_assets"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_ingestion_id"],
+            [
+                "brief_ingestions.organization_id",
+                "brief_ingestions.workspace_id",
+                "brief_ingestions.project_id",
+                "brief_ingestions.id",
+            ],
+            name="fk_brief_ingestion_source_assets_ingestion_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_asset_id"],
+            [
+                "source_assets.organization_id",
+                "source_assets.workspace_id",
+                "source_assets.project_id",
+                "source_assets.id",
+            ],
+            name="fk_brief_ingestion_source_assets_asset_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_brief_ingestion_source_assets_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "relation_type IN ('primary_source', 'supporting_source', 'reference')",
+            name="ck_brief_ingestion_source_asset_relation_type",
+        ),
+        CheckConstraint("position >= 0", name="ck_brief_ingestion_source_asset_position"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "brief_ingestion_id",
+            "position",
+            name="uq_brief_ingestion_source_assets_position",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "brief_ingestion_id",
+            "source_asset_version_id",
+            "relation_type",
+            name="uq_brief_ingestion_source_assets_version_relation",
+        ),
+        Index(
+            "ix_brief_ingestion_source_assets_ingestion",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "brief_ingestion_id",
+            "position",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_ingestion_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    attached_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    attached_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class SourceAssetRecord(Base):
@@ -756,7 +853,8 @@ class SourceAssetOperationRecord(Base):
             "'create_source_asset_version') AND source_asset_id IS NOT NULL "
             "AND source_asset_version_id IS NOT NULL AND completed_at IS NOT NULL) OR "
             "(status = 'accepted' AND operation = 'archive_source_asset' "
-            "AND source_asset_id IS NOT NULL AND completed_at IS NOT NULL)",
+            "AND source_asset_id IS NOT NULL AND source_asset_version_id IS NOT NULL "
+            "AND completed_at IS NOT NULL)",
             name="ck_source_asset_operation_outcome",
         ),
     )
@@ -795,6 +893,7 @@ class AuditEventRecord(Base):
             "'brief.created', 'brief.version_created', 'brief.submitted_for_review', "
             "'brief.approved', 'brief.archived', 'brief.issue_created', "
             "'brief.issue_resolved', 'brief.issue_dismissed', 'brief.ingestion_accepted', "
+            "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
             "'source_asset.archived')",
             name="ck_audit_action",

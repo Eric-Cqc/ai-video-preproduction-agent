@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第五阶段（controlled Structured Brief ingestion）。允许：在既有 tenant persistence 内接收 canonical Structured Brief v1，并通过 tenant-scoped、数据库幂等、原子 transaction 创建 Brief 或不可变 Version。`reserved` 是内部事务状态，绝不作为 API outcome。禁止：文件上传、解析、OCR、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-026`。
+处于 foundation bootstrap 第六阶段（controlled source-asset metadata intake）。允许：在既有 tenant persistence 内记录有界 SourceAsset 元数据与不可变 SourceAssetVersion，并把同 tenant、同 Project 的 active SourceAssetVersion 作为有序引用附加到 accepted Structured Brief ingestion。系统不接收、存储、读取或验证文件字节；SHA-256 与 byte size 都是客户端声明值。SourceAsset 和 Brief ingestion mutation 均使用 tenant-scoped PostgreSQL reservation、CAS（适用时）与单一 UoW transaction；`reserved` 是内部事务状态，绝不作为 API outcome。禁止：文件上传、object storage、解析、OCR、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-031`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

@@ -4,6 +4,7 @@ from typing import Protocol, Self
 from services.api.app.application.repositories import (
     AuditEventRepository,
     BriefIngestionRepository,
+    BriefIngestionSourceAssetRepository,
     BriefRepository,
     BriefVersionRepository,
     MembershipRepository,
@@ -24,6 +25,7 @@ class UnitOfWork(Protocol):
     projects: ProjectRepository
     briefs: BriefRepository
     brief_ingestions: BriefIngestionRepository
+    brief_ingestion_source_assets: BriefIngestionSourceAssetRepository
     brief_versions: BriefVersionRepository
     requirement_issues: RequirementIssueRepository
     source_assets: SourceAssetRepository
