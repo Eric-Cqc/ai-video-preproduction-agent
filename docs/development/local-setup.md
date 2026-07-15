@@ -1,11 +1,28 @@
 # 本地设置
 
-当前 skeleton 可在没有 Docker、数据库或云凭据的本机运行。需要 Node 24.18.0、npm 11、Python 3.13、uv 和 `make`；完整命令由根 README 与 Makefile 提供。
+需要 Node 24.18.0、npm 11、Python 3.13、uv、GNU Make、Bash 和 PostgreSQL 17。先运行 `make setup` 并复制 `.env.example`。
 
-## 冻结决定
+## PostgreSQL 选择
 
-依赖只通过 npm lockfile 与 `uv.lock` 安装；JavaScript 命令必须经过 Node 包装脚本，Python 使用仓库内 `.venv`。不得初始化数据库、Supabase 或任何外部 Provider。
+原生 PostgreSQL：创建 `foundation_local`、`foundation_test` 及最小权限本地用户，设置 `DATABASE_URL`/`TEST_DATABASE_URL` 后执行 `make db-upgrade`。
+
+可选 Docker：`make db-up` 只启动官方 `postgres:17-alpine`，绑定 `127.0.0.1:54329`，并创建 repository-scoped network/volume；随后运行 `make db-upgrade`。`make db-down` 不删除 volume，也不影响其他 Compose project。
+
+## Migration
+
+- `make db-upgrade`：升级到 head。
+- `make db-current`：确认当前为所有 head。
+- `make db-check`：确认数据库在 head 且 SQLAlchemy metadata 无未迁移变化。
+- `make db-downgrade`：显式回退一个 revision，仅用于已确认安全的本地/测试数据库。
+
+修改 metadata 后使用 Alembic autogenerate 创建 revision，审查所有约束、部分索引、upgrade 和 downgrade，再运行 upgrade/check。不得修改已经共享或应用的 migration 来重写历史。
+
+## 安全重置测试数据
+
+`make db-reset-test` 只读取 `TEST_DATABASE_URL`，并在 database 名不以 `_test` 结尾时拒绝执行。它只截断第三阶段五张业务表，不删除 database、migration metadata、volume 或其他项目资源。普通 `make check` 不执行 reset。
+
+完整命令和环境变量见根 README。没有 SQLite fallback、云数据库、Supabase 或外部 Provider。
 
 ## 复审触发条件
 
-当 skeleton 工具链无法满足两个连续发布周期的维护目标，或需要数据库/生产队列/部署时，以新 ADR 复审；不得在本文件中预先启用这些能力。
+首次共享生产环境前必须替换临时 headers、完成 auth Adapter/威胁建模，并复审 RLS、数据库角色、备份、恢复和凭据管理。

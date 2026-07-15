@@ -1,3 +1,5 @@
-# Docker boundary
+# Optional local PostgreSQL
 
-Docker is not required for setup, development, testing, or CI in this milestone. This directory reserves a documented location only; it contains no image, compose file, or cloud deployment configuration.
+`compose.postgres.yml` provides only PostgreSQL 17 for local development and tests. Application containers are intentionally absent. Native PostgreSQL remains supported through the same `DATABASE_URL` commands, so Docker is not the only workflow.
+
+The Compose project, network, and volume are repository-scoped. `make db-down` stops this service without deleting its named volume; no command touches resources owned by another project.

@@ -1,13 +1,20 @@
 # 测试策略
 
-实现阶段采用风险分层验证：领域模块的规则与状态转换使用快速确定性测试；Schema/跨语言契约使用版本兼容性测试；Adapter 使用契约与模拟 Provider 测试；Job 验证幂等、重试和审计关联；端到端测试覆盖“简报到批准交接包”，不覆盖自动成片。
+测试按风险分层：纯 domain tests 验证 Project 状态机与版本；真实 PostgreSQL tests 验证 repository、复合外键、部分唯一索引、事务回滚和 migration head；API tests 验证临时 context、membership、opaque 404、mass assignment、并发 409、安全错误与 audit scope；既有 Vitest/pytest 继续验证 Web、health contract、Worker 和 model registry。
+
+Persistence tests 使用独立 `_test` database，不使用 mock repository 代替 tenant isolation，不依赖执行顺序。fixture 在每个相关测试前后只截断五张业务表。CI 从空 PostgreSQL 17 service 应用 migration，然后执行同一套 gate。
+
+## 根命令
+
+- `make test-domain`：无数据库领域规则。
+- `make test-persistence`：PostgreSQL repository、migration、transaction 与 API isolation。
+- `make test-integration`：跨组件 contract 与 tenant API。
+- `make check`：migration head/drift、格式、lint、strict types、全部测试、contract 与 build。
 
 ## 冻结决定
 
-关键测试断言结构化制作产物、授权/tenant 隔离、版本/审计和 Provider 边界，而不是 Prompt 的逐字输出。
+关键测试必须断言 tenant 隔离、版本/审计原子性和结构化领域状态，而不是 Prompt 文本。任何跨 tenant 泄露、stale overwrite、无审计成功 mutation 或 migration drift 都是阻塞失败。
 
 ## 可替换假设与复审触发
 
-当前工具链使用 Vitest/Testing Library 验证 Web 与 TypeScript 契约，pytest 验证 API、Worker、Python 契约和 registry，Ruff/mypy/ESLint/TypeScript 作为静态门禁。`make check` 与无 secrets 的 CI 执行同一套格式、lint、typecheck、test、contract 与 build gate。
-
-浏览器自动化和覆盖率阈值仍未决定；当前真实 Web client→本地 API 测试已证明健康链路，无需引入浏览器依赖。出现首个真实用户工作流或关键回归无法由现有层级捕获时复审。任何数据泄露或破坏性契约回归都要求增加回归测试。
+测试数据库 fixture 和 CI service 细节可替换。出现并行测试需求时可评估 per-schema/per-database isolation；不得因此换用 SQLite。浏览器自动化仍延后到首个真实产品 UI。
