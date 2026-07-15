@@ -14,6 +14,8 @@
 - SQLAlchemy repository 不 commit；domain mutation 与 AuditEvent 同 UoW 原子提交。
 - Brief 内容写入前由 canonical schema 验证并限制为 128 KiB；API Content-Length 上限默认为 256 KiB。source reference 只允许 opaque identifier，不接受 URL、路径或凭据。
 - Brief/Version/Issue 的每个查询均包含 Organization、Workspace、Project 与上级 aggregate scope；跨 tenant 和错误父级统一 opaque 404。
+- Ingestion key 唯一性限定为 Organization/Workspace/Project/operation；digest、idempotency key 与内部 `reserved` 不返回给客户端、不写 Audit。accepted replay 先于 Brief CAS。
+- source reference 仅接受有界 opaque identifier；路径、URL、database URL、Authorization-like 值和 signed URL 不被接受或抓取。
 - Brief 状态、current pointer 与 issue mutations 使用数据库条件更新；stale pointer/version 返回 409，失败事务不写成功审计。
 - DATABASE_URL 不写日志，诊断表示隐藏 password；错误不返回 SQL、约束名或堆栈。
 - Audit payload 仅含 changed fields/status/version，不含 secret、Prompt、素材或 Provider response。

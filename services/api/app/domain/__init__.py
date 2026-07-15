@@ -20,6 +20,12 @@ from services.api.app.domain.errors import (
     InvalidProjectTransition,
     VersionConflict,
 )
+from services.api.app.domain.ingestion import (
+    BriefIngestion,
+    BriefIngestionOperation,
+    BriefIngestionSourceType,
+    BriefIngestionStatus,
+)
 from services.api.app.domain.models import (
     AuditEvent,
     Membership,
@@ -41,6 +47,10 @@ __all__ = [
     "BriefStatus",
     "BriefVersion",
     "BriefVersionLifecycle",
+    "BriefIngestion",
+    "BriefIngestionOperation",
+    "BriefIngestionSourceType",
+    "BriefIngestionStatus",
     "DomainError",
     "InvalidBriefMutation",
     "InvalidBriefTransition",

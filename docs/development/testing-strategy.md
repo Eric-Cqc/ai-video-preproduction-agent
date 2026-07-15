@@ -4,6 +4,8 @@
 
 Persistence tests 使用独立 `_test` database，不使用 mock repository 代替 tenant isolation，不依赖执行顺序。fixture 在每个相关测试前后截断当前八张业务表。CI 从空 PostgreSQL 17 service 应用 migration，然后执行同一套 gate。
 
+Ingestion tests 使用两个独立 PostgreSQL Session 与 Event/Barrier（不使用 sleep）验证 winner commit/replay、winner rollback/loser 接管、different digest 409、无永久 `reserved`，并覆盖 Issue、finalize、Audit 与 stale CAS rollback。
+
 ## 根命令
 
 - `make test-domain`：无数据库领域规则。

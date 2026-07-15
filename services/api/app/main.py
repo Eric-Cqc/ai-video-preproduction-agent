@@ -18,6 +18,7 @@ from services.api.app.application.errors import (
     ResourceNotFound,
     TemporaryIdentityDisabled,
 )
+from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.config import ApiSettings, get_api_settings
 from services.api.app.domain import (
@@ -34,6 +35,7 @@ from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
 from services.api.app.presentation.brief_routes import router as brief_router
+from services.api.app.presentation.ingestion_routes import router as ingestion_router
 from services.api.app.presentation.routes import router as tenant_router
 from services.api.app.routes.health import router as health_router
 
@@ -89,6 +91,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_application_service = BriefApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.ingestion_application_service = BriefIngestionApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_cors_origins,
@@ -101,11 +106,13 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             "X-Organization-Id",
             "X-Workspace-Id",
             "X-Correlation-Id",
+            "Idempotency-Key",
         ],
     )
     app.include_router(health_router)
     app.include_router(tenant_router)
     app.include_router(brief_router)
+    app.include_router(ingestion_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:

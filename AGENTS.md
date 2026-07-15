@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第四阶段（versioned Brief foundation）。允许：在既有 tenant persistence 内实现 canonical Structured Brief v1、不可变 BriefVersion、RequirementIssue、显式 review/approval、tenant-scoped repository、原子事务、乐观并发与审计。禁止：文档解析、AI/模型调用、Prompt 编译、Supabase 或其他认证 Provider、生产队列、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-021`。
+处于 foundation bootstrap 第五阶段（controlled Structured Brief ingestion）。允许：在既有 tenant persistence 内接收 canonical Structured Brief v1，并通过 tenant-scoped、数据库幂等、原子 transaction 创建 Brief 或不可变 Version。`reserved` 是内部事务状态，绝不作为 API outcome。禁止：文件上传、解析、OCR、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-026`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

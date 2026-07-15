@@ -1,6 +1,8 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import Select, case, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -8,6 +10,10 @@ from services.api.app.application.errors import ResourceConflict
 from services.api.app.domain import (
     AuditEvent,
     Brief,
+    BriefIngestion,
+    BriefIngestionOperation,
+    BriefIngestionSourceType,
+    BriefIngestionStatus,
     BriefSourceType,
     BriefStatus,
     BriefVersion,
@@ -29,6 +35,7 @@ from services.api.app.domain import (
 )
 from services.api.app.infrastructure.models import (
     AuditEventRecord,
+    BriefIngestionRecord,
     BriefRecord,
     BriefVersionRecord,
     MembershipRecord,
@@ -315,6 +322,111 @@ class SqlAlchemyBriefRepository:
             BriefRecord.workspace_id == workspace_id,
             BriefRecord.project_id == project_id,
         )
+
+
+class SqlAlchemyBriefIngestionRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, ingestion: BriefIngestion) -> BriefIngestion | None:
+        if ingestion.status is not BriefIngestionStatus.RESERVED:
+            raise ValueError("only reserved ingestions may be inserted")
+        values = {
+            "id": ingestion.id,
+            "organization_id": ingestion.organization_id,
+            "workspace_id": ingestion.workspace_id,
+            "project_id": ingestion.project_id,
+            "brief_id": ingestion.brief_id,
+            "brief_version_id": ingestion.brief_version_id,
+            "operation": ingestion.operation.value,
+            "idempotency_key": ingestion.idempotency_key,
+            "source_type": ingestion.source_type.value,
+            "source_reference": ingestion.source_reference,
+            "payload_digest": ingestion.payload_digest,
+            "schema_version": ingestion.schema_version,
+            "status": ingestion.status.value,
+            "rejection_code": ingestion.rejection_code,
+            "rejection_details": ingestion.rejection_details,
+            "submitted_by_actor_subject": ingestion.submitted_by_actor_subject,
+            "submitted_at": ingestion.submitted_at,
+            "completed_at": ingestion.completed_at,
+            "correlation_id": ingestion.correlation_id,
+            "version": ingestion.version,
+        }
+        record = self.session.scalar(
+            insert(BriefIngestionRecord)
+            .values(**values)
+            .on_conflict_do_nothing(constraint="uq_brief_ingestions_idempotency")
+            .returning(BriefIngestionRecord)
+        )
+        return _brief_ingestion(record) if record is not None else None
+
+    def finalize_accepted(
+        self,
+        ingestion: BriefIngestion,
+        *,
+        brief_id: UUID,
+        brief_version_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> BriefIngestion:
+        record = self.session.scalar(
+            update(BriefIngestionRecord)
+            .where(
+                BriefIngestionRecord.organization_id == ingestion.organization_id,
+                BriefIngestionRecord.workspace_id == ingestion.workspace_id,
+                BriefIngestionRecord.project_id == ingestion.project_id,
+                BriefIngestionRecord.id == ingestion.id,
+                BriefIngestionRecord.status == BriefIngestionStatus.RESERVED.value,
+                BriefIngestionRecord.operation == ingestion.operation.value,
+                BriefIngestionRecord.idempotency_key == ingestion.idempotency_key,
+                BriefIngestionRecord.payload_digest == ingestion.payload_digest,
+                BriefIngestionRecord.version == expected_version,
+            )
+            .values(
+                status=BriefIngestionStatus.ACCEPTED.value,
+                brief_id=brief_id,
+                brief_version_id=brief_version_id,
+                completed_at=completed_at,
+                version=expected_version + 1,
+            )
+            .returning(BriefIngestionRecord)
+        )
+        if record is None:
+            raise VersionConflict("ingestion reservation changed before acceptance")
+        return _brief_ingestion(record)
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, ingestion_id: UUID
+    ) -> BriefIngestion | None:
+        record = self.session.scalar(
+            select(BriefIngestionRecord).where(
+                BriefIngestionRecord.organization_id == organization_id,
+                BriefIngestionRecord.workspace_id == workspace_id,
+                BriefIngestionRecord.project_id == project_id,
+                BriefIngestionRecord.id == ingestion_id,
+            )
+        )
+        return _brief_ingestion(record) if record is not None else None
+
+    def get_by_idempotency_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: BriefIngestionOperation,
+        idempotency_key: str,
+    ) -> BriefIngestion | None:
+        record = self.session.scalar(
+            select(BriefIngestionRecord).where(
+                BriefIngestionRecord.organization_id == organization_id,
+                BriefIngestionRecord.workspace_id == workspace_id,
+                BriefIngestionRecord.project_id == project_id,
+                BriefIngestionRecord.operation == operation.value,
+                BriefIngestionRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _brief_ingestion(record) if record is not None else None
 
 
 class SqlAlchemyBriefVersionRepository:
@@ -701,6 +813,31 @@ def _brief(record: BriefRecord) -> Brief:
         created_by_actor_subject=record.created_by_actor_subject,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        version=record.version,
+    )
+
+
+def _brief_ingestion(record: BriefIngestionRecord) -> BriefIngestion:
+    return BriefIngestion(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        brief_id=record.brief_id,
+        brief_version_id=record.brief_version_id,
+        operation=BriefIngestionOperation(record.operation),
+        idempotency_key=record.idempotency_key,
+        source_type=BriefIngestionSourceType(record.source_type),
+        source_reference=record.source_reference,
+        payload_digest=record.payload_digest,
+        schema_version=record.schema_version,
+        status=BriefIngestionStatus(record.status),
+        rejection_code=record.rejection_code,
+        rejection_details=record.rejection_details,
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
         version=record.version,
     )
 

@@ -1,9 +1,12 @@
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
 from services.api.app.domain import (
     AuditEvent,
     Brief,
+    BriefIngestion,
+    BriefIngestionOperation,
     BriefVersion,
     Membership,
     Organization,
@@ -70,6 +73,33 @@ class BriefRepository(Protocol):
         expected_version: int,
         expected_current_version_id: UUID,
     ) -> Brief: ...
+
+
+class BriefIngestionRepository(Protocol):
+    def reserve(self, ingestion: BriefIngestion) -> BriefIngestion | None: ...
+
+    def finalize_accepted(
+        self,
+        ingestion: BriefIngestion,
+        *,
+        brief_id: UUID,
+        brief_version_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> BriefIngestion: ...
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, ingestion_id: UUID
+    ) -> BriefIngestion | None: ...
+
+    def get_by_idempotency_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: BriefIngestionOperation,
+        idempotency_key: str,
+    ) -> BriefIngestion | None: ...
 
 
 class BriefVersionRepository(Protocol):

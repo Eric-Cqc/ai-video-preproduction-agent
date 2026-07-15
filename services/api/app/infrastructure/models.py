@@ -393,6 +393,89 @@ class RequirementIssueRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
+class BriefIngestionRecord(Base):
+    __tablename__ = "brief_ingestions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_brief_ingestions_idempotency",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_brief_ingestions_project_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id"],
+            ["briefs.organization_id", "briefs.workspace_id", "briefs.project_id", "briefs.id"],
+            name="fk_brief_ingestions_brief_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id", "brief_version_id"],
+            [
+                "brief_versions.organization_id",
+                "brief_versions.workspace_id",
+                "brief_versions.project_id",
+                "brief_versions.brief_id",
+                "brief_versions.id",
+            ],
+            name="fk_brief_ingestions_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation IN ('create_brief', 'create_version')", name="ck_brief_ingestion_operation"
+        ),
+        CheckConstraint(
+            "source_type IN ('imported_structured', 'api_structured')",
+            name="ck_brief_ingestion_source_type",
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted', 'rejected')", name="ck_brief_ingestion_status"
+        ),
+        CheckConstraint("payload_digest ~ '^[0-9a-f]{64}$'", name="ck_brief_ingestion_digest"),
+        CheckConstraint("schema_version = '1.0.0'", name="ck_brief_ingestion_schema_version"),
+        CheckConstraint("version >= 1", name="ck_brief_ingestion_version"),
+        CheckConstraint(
+            "(status = 'reserved' AND brief_id IS NULL AND brief_version_id IS NULL "
+            "AND completed_at IS NULL AND rejection_code IS NULL AND rejection_details IS NULL) OR "
+            "(status = 'accepted' AND brief_id IS NOT NULL AND brief_version_id IS NOT NULL "
+            "AND completed_at IS NOT NULL AND rejection_code IS NULL "
+            "AND rejection_details IS NULL) OR (status = 'rejected' AND brief_id IS NULL "
+            "AND brief_version_id IS NULL)",
+            name="ck_brief_ingestion_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    brief_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    operation: Mapped[str] = mapped_column(String(30), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    rejection_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rejection_details: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -407,7 +490,7 @@ class AuditEventRecord(Base):
             "'project.created', 'project.updated', 'project.activated', 'project.archived', "
             "'brief.created', 'brief.version_created', 'brief.submitted_for_review', "
             "'brief.approved', 'brief.archived', 'brief.issue_created', "
-            "'brief.issue_resolved', 'brief.issue_dismissed')",
+            "'brief.issue_resolved', 'brief.issue_dismissed', 'brief.ingestion_accepted')",
             name="ck_audit_action",
         ),
         Index(
