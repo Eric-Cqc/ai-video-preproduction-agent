@@ -22,5 +22,8 @@
   },
   "devDependencies": {
     "prettier": "^3.6.2"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.1.5"
   }
 }
