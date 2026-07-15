@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第三阶段（tenant persistence foundation）。允许：在既有 skeleton 内实现 PostgreSQL migration、Organization/Workspace/Membership/Project/AuditEvent、tenant-scoped repository、原子事务、乐观并发和临时非生产 actor context。禁止：Brief、AI/模型调用、Supabase 或其他认证 Provider、生产队列、产品 UI、云资源及真实 Provider 调用。持久化决定见 `docs/adr/ADR-012` 至 `ADR-016`。
+处于 foundation bootstrap 第四阶段（versioned Brief foundation）。允许：在既有 tenant persistence 内实现 canonical Structured Brief v1、不可变 BriefVersion、RequirementIssue、显式 review/approval、tenant-scoped repository、原子事务、乐观并发与审计。禁止：文档解析、AI/模型调用、Prompt 编译、Supabase 或其他认证 Provider、生产队列、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-021`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

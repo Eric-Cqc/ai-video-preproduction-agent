@@ -13,9 +13,11 @@
 | Integrations | Adapter、Provider 策略与转换 | 领域对象定义 |
 | Export | 已批准蓝图的交接包 | 渲染/发布 |
 
+当前 Briefing 模块实现一个 Project 下可有多个 Brief 的稳定 aggregate、完整不可变 BriefVersion snapshot、显式 current pointer 和有界 RequirementIssue。Review & Approval 当前只实现 Brief 的 `draft → in_review → approved` 与 archive 动作；不包含评论、通知或通用工作流引擎。Versioning & Audit 通过同一 UoW 保存 mutation 与 AuditEvent。
+
 ## 冻结决定
 
-制作蓝图由结构化 Schema 表达；模块通过版本化契约协作（[ADR-001](../adr/ADR-001-modular-monolith.md)、[ADR-004](../adr/ADR-004-structured-video-production-schema.md)、[ADR-009](../adr/ADR-009-cross-language-contracts.md)）。
+制作蓝图由结构化 Schema 表达；模块通过版本化契约协作（[ADR-001](../adr/ADR-001-modular-monolith.md)、[ADR-004](../adr/ADR-004-structured-video-production-schema.md)、[ADR-009](../adr/ADR-009-cross-language-contracts.md)、[ADR-017](../adr/ADR-017-brief-aggregate-and-immutable-versions.md)）。
 
 ## 可替换假设与复审触发
 

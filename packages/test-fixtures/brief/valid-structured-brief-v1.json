@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0.0",
+  "objective": {
+    "primary_goal": "Introduce the new refillable bottle",
+    "secondary_goals": ["Build product consideration"],
+    "desired_action": "Visit the product page"
+  },
+  "audience": {
+    "primary_audience": "Urban adults interested in lower-waste products",
+    "secondary_audiences": ["Existing customers"],
+    "geography": ["Hong Kong"],
+    "language": ["English"],
+    "audience_insights": ["Values practical sustainability claims"]
+  },
+  "offer": {
+    "offer_details": "Launch bundle available for a limited period",
+    "mandatory_claims": ["Refillable design"],
+    "prohibited_claims": ["Zero environmental impact"]
+  },
+  "product": {
+    "product_name": "Refill Bottle",
+    "product_category": "Drinkware",
+    "key_features": ["Replaceable seal"],
+    "key_benefits": ["Designed for repeated use"],
+    "proof_points": ["Third-party material test available"]
+  },
+  "brand": {
+    "brand_name": "Example Brand",
+    "tone": ["Clear", "Optimistic"],
+    "personality": ["Practical"],
+    "visual_guidelines": ["Neutral background"],
+    "mandatory_elements": ["Brand wordmark"],
+    "prohibited_elements": ["Competitor logos"]
+  },
+  "channels": ["social", "digital_ad"],
+  "deliverables": {
+    "aspect_ratios": ["9:16", "1:1"],
+    "duration_seconds": [30],
+    "deliverable_count": 2,
+    "locale_variants": ["en-HK"],
+    "caption_requirements": "Burned-in captions",
+    "audio_requirements": "Licensed music only"
+  },
+  "creative_constraints": {
+    "required_message": "A durable bottle designed to be refilled",
+    "call_to_action": "Explore the refill system",
+    "opening_hook_requirements": ["Show the refill action in the first three seconds"],
+    "narrative_preferences": ["Product demonstration"],
+    "reference_styles": ["Clean tabletop photography"],
+    "prohibited_themes": ["Disposable lifestyle imagery"]
+  },
+  "production_constraints": {
+    "available_assets": ["Product packshots"],
+    "required_assets": ["Wordmark SVG"],
+    "talent_constraints": ["Hands only"],
+    "location_constraints": ["Studio tabletop"],
+    "deadline": "2026-09-30",
+    "budget_range": { "currency": "HKD", "minimum": 20000, "maximum": 40000 },
+    "model_or_tool_constraints": ["Any future tooling must preserve the approved claims"]
+  },
+  "legal_and_compliance": {
+    "disclaimer_requirements": [],
+    "regulated_category": null,
+    "claim_substantiation_notes": ["Material test report must be available before publication"],
+    "usage_rights_notes": "Twelve-month paid social usage"
+  },
+  "references": [
+    { "label": "Approved mood reference", "notes": "Internal reference identifier REF-001" }
+  ],
+  "success_criteria": {
+    "business_metrics": ["Product page visits"],
+    "creative_metrics": ["Three-second hold rate"],
+    "evaluation_notes": "Compare performance by aspect ratio"
+  },
+  "open_questions": []
+}

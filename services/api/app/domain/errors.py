@@ -12,3 +12,15 @@ class InvalidProjectTransition(DomainError):
 
 class InvalidProjectMutation(DomainError):
     code = "invalid_project_mutation"
+
+
+class InvalidBriefTransition(DomainError):
+    code = "invalid_brief_transition"
+
+
+class InvalidBriefMutation(DomainError):
+    code = "invalid_brief_mutation"
+
+
+class ApprovalBlocked(DomainError):
+    code = "brief_approval_blocked"

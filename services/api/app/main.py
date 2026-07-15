@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.errors import (
     ApplicationError,
     ResourceConflict,
@@ -20,7 +21,10 @@ from services.api.app.application.errors import (
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.config import ApiSettings, get_api_settings
 from services.api.app.domain import (
+    ApprovalBlocked,
     DomainError,
+    InvalidBriefMutation,
+    InvalidBriefTransition,
     InvalidProjectMutation,
     InvalidProjectTransition,
     VersionConflict,
@@ -29,6 +33,7 @@ from services.api.app.infrastructure.database import create_database_engine, cre
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
+from services.api.app.presentation.brief_routes import router as brief_router
 from services.api.app.presentation.routes import router as tenant_router
 from services.api.app.routes.health import router as health_router
 
@@ -81,6 +86,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.tenant_application_service = TenantApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.brief_application_service = BriefApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.allowed_cors_origins,
@@ -97,6 +105,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(tenant_router)
+    app.include_router(brief_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -116,6 +125,14 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 "temporary_identity_disabled",
                 "Temporary identity context is disabled",
             )
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                too_large = int(content_length) > resolved_settings.api_max_request_bytes
+            except ValueError:
+                return error_response(request, 400, "invalid_request", "Invalid request")
+            if too_large:
+                return error_response(request, 413, "request_too_large", "Request is too large")
         response = await call_next(request)
         response.headers["X-Correlation-Id"] = correlation_id
         return response
@@ -137,8 +154,22 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
 
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, error: DomainError) -> JSONResponse:
-        status_code = 409 if isinstance(error, (VersionConflict, InvalidProjectTransition)) else 400
-        if isinstance(error, InvalidProjectMutation) and "archived" in str(error):
+        status_code = (
+            409
+            if isinstance(
+                error,
+                (
+                    VersionConflict,
+                    InvalidProjectTransition,
+                    InvalidBriefTransition,
+                    ApprovalBlocked,
+                ),
+            )
+            else 400
+        )
+        if isinstance(error, (InvalidProjectMutation, InvalidBriefMutation)) and "archived" in str(
+            error
+        ):
             status_code = 409
         return error_response(request, status_code, error.code, str(error))
 
