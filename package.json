@@ -1,0 +1,26 @@
+{
+  "name": "ai-video-preproduction-agent",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "npm": ">=11 <12"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "dev:web": "./scripts/run-with-node.sh npm --workspace @foundation/web run dev",
+    "format": "./scripts/run-with-node.sh npm exec -- prettier --write apps packages/contracts tests/integration .github README.md package.json",
+    "format:check": "./scripts/run-with-node.sh npm exec -- prettier --check apps packages/contracts tests/integration .github README.md package.json",
+    "lint": "./scripts/run-with-node.sh npm --workspace @foundation/web run lint",
+    "typecheck": "./scripts/run-with-node.sh npm --workspace @foundation/contracts run typecheck && ./scripts/run-with-node.sh npm --workspace @foundation/web run typecheck",
+    "test": "./scripts/run-with-node.sh npm --workspace @foundation/contracts run test && ./scripts/run-with-node.sh npm --workspace @foundation/web run test",
+    "build": "./scripts/run-with-node.sh npm --workspace @foundation/contracts run build && ./scripts/run-with-node.sh npm --workspace @foundation/web run build"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

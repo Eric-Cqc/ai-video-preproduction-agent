@@ -8,4 +8,6 @@
 
 ## 可替换假设与复审触发
 
-测试框架和覆盖率阈值未定。首次可执行模块进入仓库前，按所选运行时补充命令、最低门槛及 CI 策略；任何数据泄露或破坏性契约回归都要求增加回归测试。
+当前工具链使用 Vitest/Testing Library 验证 Web 与 TypeScript 契约，pytest 验证 API、Worker、Python 契约和 registry，Ruff/mypy/ESLint/TypeScript 作为静态门禁。`make check` 与无 secrets 的 CI 执行同一套格式、lint、typecheck、test、contract 与 build gate。
+
+浏览器自动化和覆盖率阈值仍未决定；当前真实 Web client→本地 API 测试已证明健康链路，无需引入浏览器依赖。出现首个真实用户工作流或关键回归无法由现有层级捕获时复审。任何数据泄露或破坏性契约回归都要求增加回归测试。

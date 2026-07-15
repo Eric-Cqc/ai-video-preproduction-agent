@@ -6,6 +6,8 @@
 4. 检查 Markdown 链接、术语、边界和与既有 ADR 的一致性；实现阶段再执行相应格式化、测试与构建。
 5. 交付时说明变更、验证、假设与未解决项；不提交密钥或客户数据。
 
+当前可执行阶段以 `make format` 处理机械格式，以 `make check` 执行提交前完整质量门禁。所有 JavaScript 子命令由 Makefile 转交 `scripts/run-with-node.sh`；不得绕开 wrapper。
+
 ## 冻结决定
 
 ADR 采用追加式历史：接受的决定不被静默重写，替代决定以新 ADR 记录并交叉引用。

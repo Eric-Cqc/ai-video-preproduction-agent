@@ -4,7 +4,11 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第一阶段。允许：文档、ADR、工程规则和非执行性的设计材料。禁止：应用脚手架、`package.json`、依赖安装、业务代码、数据库/迁移、Supabase、模型调用、UI、云资源及外部 Provider 调用。
+处于 foundation bootstrap 第二阶段（engineering skeleton）。允许：实现 Web/API/Worker 的健康与就绪性、显式契约、最小 Provider registry 边界、确定性 fixtures、测试、CI 和本地开发工具。禁止：产品业务功能、数据库业务表、Supabase、认证、生产队列、模型调用、UI 框架、云资源及真实 Provider 调用。工具链决定见 `docs/adr/ADR-011-engineering-skeleton-toolchain.md`。
+
+所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
+
+Makefile 是开发者的公共命令入口；不要直接执行裸 `node`、`npm` 或 `npx`。根 `package.json` 会让其后续 npm 子进程再次经过 wrapper；直接运行 `npm run ...` 无法技术上控制该父 npm 进程所使用的 Node，因此不属于支持的入口。
 
 ## 产品与架构护栏
 

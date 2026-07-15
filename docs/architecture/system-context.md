@@ -18,4 +18,4 @@ flowchart LR
 
 ## 可替换假设与复审触发
 
-Web、API、Worker 的具体框架与部署拓扑未选定。达到 [FOUNDATION.md](../../FOUNDATION.md) 的单体或 Job 复审指标时，再以 ADR 评估替换。
+当前 skeleton 用 Next.js、FastAPI 与 one-shot Python Worker 落实这些职责边界（[ADR-011](../adr/ADR-011-engineering-skeleton-toolchain.md)）。它们共处一个 monorepo、共享显式契约且没有独立业务数据所有权，因此不构成微服务拆分。框架与部署拓扑仍可替换；达到 [FOUNDATION.md](../../FOUNDATION.md) 的单体或 Job 复审指标时，再以 ADR 评估替换。
