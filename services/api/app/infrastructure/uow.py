@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from services.api.app.application.repositories import (
     AuditEventRepository,
+    BriefIngestionRepository,
     BriefRepository,
     BriefVersionRepository,
     MembershipRepository,
@@ -15,6 +16,7 @@ from services.api.app.application.repositories import (
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.repositories import (
     SqlAlchemyAuditEventRepository,
+    SqlAlchemyBriefIngestionRepository,
     SqlAlchemyBriefRepository,
     SqlAlchemyBriefVersionRepository,
     SqlAlchemyMembershipRepository,
@@ -31,6 +33,7 @@ class SqlAlchemyUnitOfWork:
     memberships: MembershipRepository
     projects: ProjectRepository
     briefs: BriefRepository
+    brief_ingestions: BriefIngestionRepository
     brief_versions: BriefVersionRepository
     requirement_issues: RequirementIssueRepository
     audit_events: AuditEventRepository
@@ -46,6 +49,7 @@ class SqlAlchemyUnitOfWork:
         self.memberships = SqlAlchemyMembershipRepository(self.session)
         self.projects = SqlAlchemyProjectRepository(self.session)
         self.briefs = SqlAlchemyBriefRepository(self.session)
+        self.brief_ingestions = SqlAlchemyBriefIngestionRepository(self.session)
         self.brief_versions = SqlAlchemyBriefVersionRepository(self.session)
         self.requirement_issues = SqlAlchemyRequirementIssueRepository(self.session)
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)

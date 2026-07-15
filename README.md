@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone establishes a tenant-aware, structured, immutable-version Brief foundation inside the existing Project container; it does not generate, edit, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds controlled ingestion of already structured Brief JSON; it does not upload or parse files, fetch URLs, use AI, generate prompts, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -9,11 +9,18 @@ This repository contains the executable foundation for an **AI video preproducti
 - PostgreSQL 17 schema managed by Alembic, with composite tenant constraints and partial membership indexes.
 - Tenant-scoped repositories, one application Unit of Work, atomic mutation/audit writes, and Project optimistic concurrency.
 - Canonical Structured Brief v1 JSON Schema, immutable BriefVersion snapshots, deterministic requirement issues, explicit review/approval, and Brief optimistic concurrency.
+- Project-scoped structured ingestion with canonical validation, stable serialization/SHA-256 digest, PostgreSQL idempotency, replay and atomic audit.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
 There is no file upload or parsing, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+
+## Controlled structured ingestion
+
+The API supports `create_brief` and `create_version` only for pre-structured canonical Brief JSON. Each mutation requires an 8–128-character printable ASCII `Idempotency-Key`, scoped to Organization, Workspace, Project and operation. The server validates the canonical schema, deterministically serializes result-affecting input, and computes SHA-256. A matching accepted request replays with 200 and no new audit; a different digest returns 409. `reserved` exists only within the winning database transaction and is never returned.
+
+`source_reference` is a bounded opaque identifier, not a path, URL, database URL, credential or Authorization-like value. HTTP bodies remain capped at 256 KiB and canonical content at 128 KiB. PostgreSQL statement timeout defaults to 5000ms, bounding stalled unique-key waits; timeout rollback leaves no reservation.
 
 ## Repository layout
 
@@ -155,6 +162,7 @@ Use `make` as the public developer entry point; do not run bare `node`, `npm`, o
 | `DATABASE_POOL_SIZE`            | `5`                             | SQLAlchemy pool size                        |
 | `DATABASE_MAX_OVERFLOW`         | `5`                             | Pool overflow limit                         |
 | `DATABASE_POOL_TIMEOUT_SECONDS` | `10`                            | Pool checkout timeout                       |
+| `DATABASE_STATEMENT_TIMEOUT_MS` | `5000`                          | PostgreSQL statement/wait bound             |
 | `DATABASE_ECHO`                 | `false`                         | Local/test SQL diagnostics only             |
 | `WEB_HOST` / `WEB_PORT`         | `127.0.0.1` / `3000`            | Web bind address                            |
 | `WORKER_LOG_LEVEL`              | `INFO`                          | Worker structured log level                 |
@@ -163,6 +171,6 @@ The checked-in values are local test credentials only. Production requires an ex
 
 ## Architecture and milestone status
 
-The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation. The execution record is [versioned-brief-foundation-plan.md](docs/development/plans/versioned-brief-foundation-plan.md).
+The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation; ADR-022 through ADR-026 record controlled structured ingestion. The execution records are [versioned-brief-foundation-plan.md](docs/development/plans/versioned-brief-foundation-plan.md) and [structured-brief-ingestion-plan.md](docs/development/plans/structured-brief-ingestion-plan.md).
 
-The next intended milestone is controlled Brief ingestion at the application boundary, beginning with explicitly approved deterministic structured input—not autonomous AI generation. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; file parsing, uploads or AI require a separately reviewed scope and ADR.
+The next intended milestone is a separately reviewed authorization and operational-hardening decision for this synchronous structured ingress. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; file parsing, uploads, URL retrieval, OCR, AI or background processing require their own reviewed scope and ADR.

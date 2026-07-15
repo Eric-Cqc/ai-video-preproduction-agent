@@ -4,6 +4,8 @@ API 为每个请求接受受限 `X-Correlation-Id` 或生成 UUID，并在响应
 
 AuditEvent 是产品级 mutation evidence：记录 actor subject、tenant、aggregate、action、version/status metadata 与 occurred_at；不记录数据库 URL、secret、Prompt、素材、请求正文或 Provider response。failed authorization、validation、stale concurrency 和 rollback 不写成功事件。
 
+Ingestion accepted audit 只记录 ingestion ID、operation、schema/source type、Brief version、issue count 和 aggregate version；不记录 key、digest、source reference 或 Structured Brief 正文。replay 不追加 audit。
+
 Worker self-check 保持零 handler 与结构化启动信息。没有 hosted logging、OpenTelemetry、production analytics 或全局 audit search。
 
 ## 冻结决定
