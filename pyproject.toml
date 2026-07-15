@@ -1,0 +1,53 @@
+[project]
+name = "ai-video-preproduction-foundation"
+version = "0.1.0"
+description = "Executable engineering foundation for the AI video preproduction system"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "jsonschema>=4.23,<5",
+  "pydantic>=2.10,<3",
+  "pydantic-settings>=2.7,<3",
+  "uvicorn>=0.34,<1",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28,<1",
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<10",
+  "ruff>=0.9,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = [
+  "services/api/tests",
+  "services/worker/tests",
+  "packages/contracts/python/tests",
+  "packages/model-registry/tests",
+  "tests/integration",
+]
+pythonpath = [".", "packages/contracts/python", "packages/model-registry"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["node_modules", ".next"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["services", "packages/contracts/python", "packages/model-registry", "tests/integration"]
+mypy_path = ["packages/contracts/python", "packages/model-registry"]
+exclude = ["node_modules", ".next"]
+
+[[tool.mypy.overrides]]
+module = ["jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
