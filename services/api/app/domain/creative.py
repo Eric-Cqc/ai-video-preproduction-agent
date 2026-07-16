@@ -17,6 +17,37 @@ class CreativeGenerationOperationStatus(StrEnum):
     ACCEPTED = "accepted"
 
 
+class VisualPlanningOperationType(StrEnum):
+    GENERATE_STORYBOARD = "generate_storyboard"
+    GENERATE_SHOT_PLAN = "generate_shot_plan"
+
+
+class VisualPlanningOperationStatus(StrEnum):
+    RESERVED = "reserved"
+    ACCEPTED = "accepted"
+
+
+@dataclass(frozen=True, slots=True)
+class VisualPlanningOperation:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    operation: VisualPlanningOperationType
+    idempotency_key: str
+    request_digest: str
+    status: VisualPlanningOperationStatus
+    outcome_storyboard_run_id: UUID | None
+    outcome_storyboard_version_id: UUID | None
+    outcome_shot_plan_run_id: UUID | None
+    outcome_shot_plan_version_id: UUID | None
+    submitted_by_actor_subject: str
+    submitted_at: datetime
+    completed_at: datetime | None
+    correlation_id: str
+    version: int
+
+
 @dataclass(frozen=True, slots=True)
 class CreativeGenerationOperation:
     id: UUID
@@ -136,4 +167,107 @@ class ScriptVersion:
     schema_version: str
     content: dict[str, object]
     content_digest: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class StoryboardRun:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    brief_id: UUID
+    brief_version_id: UUID
+    concept_run_id: UUID
+    concept_candidate_id: UUID
+    concept_selection_id: UUID
+    script_run_id: UUID
+    script_version_id: UUID
+    script_content_digest: str
+    instruction_template_id: str
+    instruction_template_version: str
+    provider_id: str
+    model_id: str
+    status: CreativeRunStatus
+    failure_category: str | None
+    created_by_actor_subject: str
+    created_at: datetime
+    completed_at: datetime | None
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
+class StoryboardVersion:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    storyboard_run_id: UUID
+    brief_id: UUID
+    brief_version_id: UUID
+    concept_run_id: UUID
+    concept_candidate_id: UUID
+    concept_selection_id: UUID
+    script_run_id: UUID
+    script_version_id: UUID
+    version_number: int
+    schema_version: str
+    content: dict[str, object]
+    content_digest: str
+    total_duration_seconds: int
+    scene_count: int
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ShotPlanRun:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    storyboard_run_id: UUID
+    storyboard_version_id: UUID
+    script_run_id: UUID
+    script_version_id: UUID
+    brief_id: UUID
+    brief_version_id: UUID
+    concept_run_id: UUID
+    concept_candidate_id: UUID
+    concept_selection_id: UUID
+    storyboard_content_digest: str
+    instruction_template_id: str
+    instruction_template_version: str
+    provider_id: str
+    model_id: str
+    status: CreativeRunStatus
+    failure_category: str | None
+    created_by_actor_subject: str
+    created_at: datetime
+    completed_at: datetime | None
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
+class ShotPlanVersion:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    shot_plan_run_id: UUID
+    storyboard_run_id: UUID
+    storyboard_version_id: UUID
+    script_run_id: UUID
+    script_version_id: UUID
+    brief_id: UUID
+    brief_version_id: UUID
+    concept_run_id: UUID
+    concept_candidate_id: UUID
+    concept_selection_id: UUID
+    version_number: int
+    schema_version: str
+    content: dict[str, object]
+    content_digest: str
+    total_duration_seconds: int
+    scene_count: int
+    shot_count: int
     created_at: datetime

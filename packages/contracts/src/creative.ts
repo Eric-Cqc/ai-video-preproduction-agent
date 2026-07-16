@@ -25,5 +25,74 @@ export function parseCreativeContent(
 ): Record<string, unknown> {
   const validate = validators[kind];
   if (!validate(value)) throw new CreativeContractError(validate.errors);
+  if (kind === "storyboard") validateStoryboardSemantics(value);
+  if (kind === "shotPlan") validateShotPlanSemantics(value);
   return value;
+}
+
+function validateStoryboardSemantics(value: Record<string, unknown>): void {
+  const scenes = value.scenes;
+  if (!Array.isArray(scenes)) return;
+  const sourceNumbers = scenes.map((scene) =>
+    typeof scene === "object" && scene !== null
+      ? (scene as Record<string, unknown>).source_script_scene_number
+      : undefined,
+  );
+  if (!sourceNumbers.every((number, index) => number === index + 1)) {
+    throw new CreativeContractError(null);
+  }
+  const total = scenes.reduce((sum, scene) => {
+    const duration = (scene as Record<string, unknown>)
+      .estimated_duration_seconds;
+    return sum + (typeof duration === "number" ? duration : 0);
+  }, 0);
+  if (!Number.isFinite(total) || total <= 0)
+    throw new CreativeContractError(null);
+  for (const scene of scenes) {
+    const record = scene as Record<string, unknown>;
+    for (const field of [
+      "visual_summary",
+      "composition",
+      "camera_language",
+      "action",
+    ]) {
+      if (containsExternalAction(String(record[field] ?? ""))) {
+        throw new CreativeContractError(null);
+      }
+    }
+  }
+}
+
+function validateShotPlanSemantics(value: Record<string, unknown>): void {
+  const shots = value.shots;
+  if (!Array.isArray(shots)) return;
+  const ids = shots.map((shot) => (shot as Record<string, unknown>).shot_id);
+  if (new Set(ids).size !== ids.length) throw new CreativeContractError(null);
+  const orders = shots.map(
+    (shot) => (shot as Record<string, unknown>).shot_number,
+  );
+  if (!orders.every((number, index) => number === index + 1)) {
+    throw new CreativeContractError(null);
+  }
+  for (const shot of shots) {
+    const prompt = String(
+      (shot as Record<string, unknown>).generation_prompt ?? "",
+    ).toLowerCase();
+    if (containsExternalAction(prompt)) {
+      throw new CreativeContractError(null);
+    }
+  }
+}
+
+function containsExternalAction(value: string): boolean {
+  return [
+    "http://",
+    "https://",
+    "fetch ",
+    "tool call",
+    "run shell",
+    "execute ",
+    "ignore previous",
+    "system prompt",
+  ].some((token) => value.includes(token));
 }

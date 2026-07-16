@@ -29,6 +29,7 @@ from services.api.app.application.errors import (
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.model_provider import (
     DeterministicFakeProvider,
+    DeterministicVisualPlanningProvider,
     ProviderOutcome,
     ProviderOutcomeStatus,
 )
@@ -39,6 +40,7 @@ from services.api.app.application.storage import (
     DisabledStorageAdapter,
     LocalFilesystemStorageAdapter,
 )
+from services.api.app.application.visual_planning_services import VisualPlanningApplicationService
 from services.api.app.config import ApiSettings, get_api_settings
 from services.api.app.domain import (
     ApprovalBlocked,
@@ -64,6 +66,7 @@ from services.api.app.presentation.ingestion_routes import router as ingestion_r
 from services.api.app.presentation.routes import router as tenant_router
 from services.api.app.presentation.source_asset_routes import router as source_asset_router
 from services.api.app.presentation.source_object_routes import router as source_object_router
+from services.api.app.presentation.visual_planning_routes import router as visual_planning_router
 from services.api.app.routes.health import router as health_router
 
 logger = logging.getLogger(__name__)
@@ -125,6 +128,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         lambda: SqlAlchemyUnitOfWork(session_factory),
         DeterministicFakeProvider(ProviderOutcome(ProviderOutcomeStatus.ERROR)),
     )
+    visual_planning_service = VisualPlanningApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory), DeterministicVisualPlanningProvider()
+    )
+    app.state.visual_planning_application_service = visual_planning_service
+    app.state.storyboard_application_service = visual_planning_service
+    app.state.shot_plan_application_service = visual_planning_service
     app.state.ingestion_application_service = BriefIngestionApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -168,6 +177,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(source_asset_router)
     app.include_router(source_object_router)
     app.include_router(document_extraction_router)
+    app.include_router(visual_planning_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:

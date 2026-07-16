@@ -12,7 +12,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "64197719c817"
+    assert revision == "9031dcffc3ea"
     assert tables == {
         "organizations",
         "workspaces",
@@ -41,6 +41,11 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
         "creative_generation_operations",
         "script_runs",
         "script_versions",
+        "storyboard_runs",
+        "storyboard_versions",
+        "shot_plan_runs",
+        "shot_plan_versions",
+        "visual_planning_operations",
     }
 
 
@@ -105,3 +110,35 @@ def test_source_asset_current_pointer_is_same_aggregate_and_deferred(
     )
     assert constraint["condeferrable"] is True
     assert constraint["condeferred"] is True
+
+
+def test_visual_planning_lineage_and_operation_constraints_exist(
+    database_engine: Engine,
+) -> None:
+    expected = {
+        "uq_script_versions_lineage",
+        "uq_storyboard_runs_lineage",
+        "fk_storyboard_runs_script_version",
+        "uq_storyboard_versions_lineage",
+        "fk_storyboard_versions_run",
+        "uq_shot_plan_runs_lineage",
+        "fk_shot_plan_runs_storyboard",
+        "fk_shot_plan_versions_run",
+        "fk_visual_operation_storyboard_run",
+        "fk_visual_operation_storyboard_version",
+        "fk_visual_operation_shot_run",
+        "fk_visual_operation_shot_version",
+        "ck_visual_operation_outcome",
+    }
+    with database_engine.connect() as connection:
+        constraints = set(
+            connection.scalars(
+                text(
+                    "SELECT conname FROM pg_constraint "
+                    "WHERE conname = ANY(:names) "
+                    "AND connamespace = 'public'::regnamespace"
+                ),
+                {"names": list(expected)},
+            )
+        )
+    assert constraints == expected

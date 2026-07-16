@@ -39,20 +39,60 @@
             "minimum": 1,
             "maximum": 60
           },
-          "narrative_purpose": { "type": "string", "maxLength": 500 },
-          "visual_summary": { "type": "string", "maxLength": 1500 },
-          "composition": { "type": "string", "maxLength": 500 },
-          "camera_language": { "type": "string", "maxLength": 500 },
-          "subject": { "type": "string", "maxLength": 500 },
-          "setting": { "type": "string", "maxLength": 500 },
-          "action": { "type": "string", "maxLength": 1000 },
-          "lighting": { "type": "string", "maxLength": 500 },
+          "narrative_purpose": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "visual_summary": {
+            "type": "string",
+            "maxLength": 1500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "composition": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "camera_language": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "setting": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "lighting": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
           "color_palette": {
             "type": "array",
             "maxItems": 12,
-            "items": { "type": "string", "maxLength": 80 }
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^[^\\u0000-\\u001f]*$"
+            }
           },
-          "continuity_notes": { "type": "string", "maxLength": 1000 },
+          "continuity_notes": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
           "estimated_duration_seconds": {
             "type": "integer",
             "minimum": 1,

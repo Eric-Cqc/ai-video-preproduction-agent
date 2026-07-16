@@ -23,12 +23,17 @@ from services.api.app.application.repositories import (
     RequirementIssueRepository,
     ScriptRunRepository,
     ScriptVersionRepository,
+    ShotPlanRunRepository,
+    ShotPlanVersionRepository,
     SourceAssetOperationRepository,
     SourceAssetRepository,
     SourceAssetVersionRepository,
     SourceObjectCleanupRequirementRepository,
     SourceObjectRepository,
     SourceObjectUploadRepository,
+    StoryboardRunRepository,
+    StoryboardVersionRepository,
+    VisualPlanningOperationRepository,
     WorkspaceRepository,
 )
 from services.api.app.infrastructure.creative_repositories import (
@@ -63,6 +68,13 @@ from services.api.app.infrastructure.repositories import (
     SqlAlchemySourceObjectUploadRepository,
     SqlAlchemyWorkspaceRepository,
 )
+from services.api.app.infrastructure.visual_planning_repositories import (
+    SqlAlchemyShotPlanRunRepository,
+    SqlAlchemyShotPlanVersionRepository,
+    SqlAlchemyStoryboardRunRepository,
+    SqlAlchemyStoryboardVersionRepository,
+    SqlAlchemyVisualPlanningOperationRepository,
+)
 
 
 class SqlAlchemyUnitOfWork:
@@ -92,6 +104,11 @@ class SqlAlchemyUnitOfWork:
     script_runs: ScriptRunRepository
     script_versions: ScriptVersionRepository
     creative_generation_operations: CreativeGenerationOperationRepository
+    storyboard_runs: StoryboardRunRepository
+    storyboard_versions: StoryboardVersionRepository
+    shot_plan_runs: ShotPlanRunRepository
+    shot_plan_versions: ShotPlanVersionRepository
+    visual_planning_operations: VisualPlanningOperationRepository
     audit_events: AuditEventRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -138,6 +155,11 @@ class SqlAlchemyUnitOfWork:
         self.creative_generation_operations = SqlAlchemyCreativeGenerationOperationRepository(
             self.session
         )
+        self.storyboard_runs = SqlAlchemyStoryboardRunRepository(self.session)
+        self.storyboard_versions = SqlAlchemyStoryboardVersionRepository(self.session)
+        self.shot_plan_runs = SqlAlchemyShotPlanRunRepository(self.session)
+        self.shot_plan_versions = SqlAlchemyShotPlanVersionRepository(self.session)
+        self.visual_planning_operations = SqlAlchemyVisualPlanningOperationRepository(self.session)
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
         return self
 

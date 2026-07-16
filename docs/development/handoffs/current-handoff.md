@@ -1,6 +1,13 @@
 # Current project handoff
 
-Generated: 2026-07-15 Asia/Hong_Kong.
+> Authoritative current state (2026-07-16): Stage 10 and Stage 11 are complete
+> and merged into `main`. Stage 12 Storyboard and Shot Plan is authorized and
+> implemented on `feat/storyboard-shot-plan`, with migration head `9031dcffc3ea`.
+> The remainder of this document records historical handoff material from the
+> earlier Source Asset milestone; do not use its old branch, head, or next-step
+> instructions as current scope.
+
+Generated: 2026-07-16 Asia/Hong_Kong.
 
 This file is for handing the repository to a new ChatGPT/Codex account. It records the repository state from fresh local inspection and must be read before continuing work.
 
@@ -8,9 +15,9 @@ This file is for handing the repository to a new ChatGPT/Codex account. It recor
 
 - Repository name: `ai-video-preproduction-agent`
 - Local path: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
-- Current branch: `feat/source-asset-intake`
-- Current Alembic migration head: `d6e7f8a9b0c1`
-- Current head migration file: `infra/migrations/versions/d6e7f8a9b0c1_create_source_asset_operations.py`
+- Current branch: `feat/storyboard-shot-plan`
+- Current Alembic migration head: `9031dcffc3ea`
+- Current head migration file: `infra/migrations/versions/9031dcffc3ea_create_storyboard_and_shot_plan_.py`
 
 ## Recent commits
 
@@ -49,13 +56,16 @@ Do not commit or push unless the user explicitly asks.
 - Phase 6 Milestone A: controlled Source Asset intake governance and ADR-027 through ADR-031.
 - Phase 6 Milestone B: `SourceAsset` / immutable `SourceAssetVersion` domain model, validation rules, `source_assets` / `source_asset_versions`, current pointer FK, supersedes FK and PostgreSQL constraint tests.
 - Phase 6 Milestone C: tenant-scoped SourceAsset repositories, UoW integration, `source_asset_operations`, source mutation idempotency, CAS, duplicate indicator, audit and service-level tests.
+- Stage 10: Brief candidate human review completed and merged into `main`.
+- Stage 11: Creative Concept and Script workflow completed and merged into `main`.
+- Stage 12A/B: Storyboard and Shot Plan immutable persistence, deterministic offline generation, semantic validation, services, APIs, replay, permissions, concurrency, rollback and contract tests completed on `feat/storyboard-shot-plan`.
 
 ## Current stage and milestone
 
-- Current stage: sixth foundation milestone, Controlled Source Document Intake and Immutable Source Asset Metadata Boundary.
-- Current milestone: Milestone D should be next.
-- Current plan file: `docs/development/plans/source-asset-intake-plan.md`
-- Current plan status: `Milestone C complete; no dependencies added, no API or Brief attachment implementation started.`
+- Current stage: Stage 12 — Storyboard and Shot Plan.
+- Current milestone: complete for submission review; no commit or push has been performed.
+- Current plan file: `docs/development/plans/storyboard-shot-plan.md`
+- Current plan status: Milestones A–E complete; deterministic offline provider only.
 
 ## Current stage completed content
 
@@ -92,9 +102,10 @@ Milestone C:
   - `source_asset.version_created`;
   - `source_asset.archived`.
 
-## Not yet completed
+## Historical source-asset milestone status
 
-Milestone D is not implemented:
+The following statements describe the historical Source Asset handoff and are not
+current Stage 12 work:
 
 - No SourceAsset HTTP API routes.
 - No SourceAsset presentation schemas.
@@ -104,11 +115,29 @@ Milestone D is not implemented:
 - No attachment digest integration with Structured Brief ingestion.
 - No API tests for SourceAsset endpoints or Brief ingestion attachments.
 
-Milestone E is not implemented:
+Historical Milestone E was not implemented on that branch:
 
 - Documentation updates for final source asset API behavior.
 - Final full diff review for the entire sixth milestone.
 - Final CI-oriented review after Milestone D/E.
+
+## Stage 12 completion handoff
+
+- Immutable tables: `storyboard_runs`, `storyboard_versions`, `shot_plan_runs`,
+  `shot_plan_versions`, and `visual_planning_operations`.
+- Composite tenant/workspace/project lineage pins ScriptVersion and the complete
+  Brief/Concept/Selection lineage; Shot Plan pins StoryboardVersion.
+- Generation services resolve accepted replay before lifecycle checks, reserve
+  through PostgreSQL, validate strict JSON/schema/semantics, create immutable
+  artifacts, finalize by CAS, append bounded audit and commit once through UoW.
+- Deterministic fixture provider is offline-only with bounded valid, malformed,
+  schema, traceability, duration, continuity, safety, refusal, timeout and error
+  modes. It never calls a network, SDK, tool, shell, image or video generator.
+- API routes are tenant scoped, owner/admin/member mutation-only, viewer-readable,
+  use Idempotency-Key, return 201/200 replay/409 digest conflict and opaque 404s,
+  and do not expose request digests, keys, operation rows, prompts or raw output.
+- Stage 12A and Stage 12B targeted PostgreSQL tests, migration checks, contract
+  parity, `make test` and full `make check` are the required final gates.
 
 ## Frozen architecture and security decisions
 
