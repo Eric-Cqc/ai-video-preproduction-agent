@@ -21,6 +21,7 @@
 - SourceObject 与 upload outcome 查询始终包含 Organization、Workspace、Project、Asset、Version scope。字节、filename、checksum、storage key/path、Idempotency-Key 与 headers 不写 Audit 或公共错误。
 - Document parser 由 verified media type 服务端选择，不接受动态名称。输入经 StoragePort 读取后重新核对 SHA-256/size；只允许 bounded UTF-8 plain text/CSV/JSON，拒绝 binary controls、重复 JSON key、过深/过宽结构和超限输出。Parser 不执行宏/代码、不解压、不抓取 URL。
 - DocumentExtraction 不可变且完整 tenant/Project/Asset/Version scoped；Audit 不含 source/extracted full text、checksum、filename、storage key 或 operation key。
+- 离线 Brief extraction 只从 scoped immutable DocumentExtraction 读取文本；模型 port 禁止 tools/external actions，当前只有 deterministic fake。输入/输出有硬上限，输出必须是 raw JSON 并通过 canonical Structured Brief Schema。Run/Attempt 不可变，完整 Prompt、输入、原始输出、candidate 内容和 digest 均不进入 Audit；合格候选只能进入 `human_review_required`，不能自动写 BriefVersion。
 - SourceAsset、Version 与 operation 查询始终含 Organization、Workspace、Project 和父 aggregate scope；跨 tenant 或跨 Project 读取统一 opaque 404。viewer 只读，member 不得 archive，archive 不提供 PATCH/DELETE 替代路径。
 - SourceAsset operation 的 idempotency key、digest、内部 `reserved` status 不返回、不记录 Audit。accepted replay 先于 aggregate/current-pointer CAS；每个 accepted outcome 同时引用 asset 与 immutable version。
 - Brief attachment 只接受同 tenant、同 Project、active Asset 的正确 Version。repository 使用带 accepted-status 谓词的条件插入，防止 reserved/rejected ingestion 经内部通道单独获得 attachment；application finalize、attachment 和 audit 共用一个 UoW transaction。

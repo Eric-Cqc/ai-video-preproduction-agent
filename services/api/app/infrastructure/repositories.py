@@ -10,6 +10,10 @@ from services.api.app.application.errors import ResourceConflict
 from services.api.app.domain import (
     AuditEvent,
     Brief,
+    BriefExtractionAttempt,
+    BriefExtractionAttemptStatus,
+    BriefExtractionRun,
+    BriefExtractionRunStatus,
     BriefIngestion,
     BriefIngestionOperation,
     BriefIngestionSourceAsset,
@@ -54,6 +58,8 @@ from services.api.app.domain import (
 )
 from services.api.app.infrastructure.models import (
     AuditEventRecord,
+    BriefExtractionAttemptRecord,
+    BriefExtractionRunRecord,
     BriefIngestionRecord,
     BriefIngestionSourceAssetRecord,
     BriefRecord,
@@ -1392,6 +1398,91 @@ class SqlAlchemyRequirementIssueRepository:
         )
 
 
+class SqlAlchemyBriefExtractionRunRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, run: BriefExtractionRun) -> BriefExtractionRun:
+        record = BriefExtractionRunRecord(
+            id=run.id,
+            organization_id=run.organization_id,
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            document_extraction_id=run.document_extraction_id,
+            provider_id=run.provider_id,
+            model_id=run.model_id,
+            prompt_template_id=run.prompt_template_id,
+            prompt_template_version=run.prompt_template_version,
+            input_extraction_checksum=run.input_extraction_checksum,
+            status=run.status.value,
+            candidate_structured_brief=run.candidate_structured_brief,
+            candidate_digest=run.candidate_digest,
+            candidate_issues=run.candidate_issues,
+            created_by_actor_subject=run.created_by_actor_subject,
+            created_at=run.created_at,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "brief_extraction_run_conflict", "extraction run is invalid"
+        )
+        return _brief_extraction_run(record)
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> BriefExtractionRun | None:
+        record = self.session.scalar(
+            select(BriefExtractionRunRecord).where(
+                BriefExtractionRunRecord.organization_id == organization_id,
+                BriefExtractionRunRecord.workspace_id == workspace_id,
+                BriefExtractionRunRecord.project_id == project_id,
+                BriefExtractionRunRecord.id == run_id,
+            )
+        )
+        return _brief_extraction_run(record) if record is not None else None
+
+
+class SqlAlchemyBriefExtractionAttemptRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, attempt: BriefExtractionAttempt) -> BriefExtractionAttempt:
+        record = BriefExtractionAttemptRecord(
+            id=attempt.id,
+            organization_id=attempt.organization_id,
+            workspace_id=attempt.workspace_id,
+            project_id=attempt.project_id,
+            run_id=attempt.run_id,
+            attempt_number=attempt.attempt_number,
+            status=attempt.status.value,
+            output_digest=attempt.output_digest,
+            error_code=attempt.error_code,
+            input_character_count=attempt.input_character_count,
+            output_character_count=attempt.output_character_count,
+            started_at=attempt.started_at,
+            completed_at=attempt.completed_at,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "brief_extraction_attempt_conflict", "extraction attempt is invalid"
+        )
+        return _brief_extraction_attempt(record)
+
+    def list_for_run(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> list[BriefExtractionAttempt]:
+        records = self.session.scalars(
+            select(BriefExtractionAttemptRecord)
+            .where(
+                BriefExtractionAttemptRecord.organization_id == organization_id,
+                BriefExtractionAttemptRecord.workspace_id == workspace_id,
+                BriefExtractionAttemptRecord.project_id == project_id,
+                BriefExtractionAttemptRecord.run_id == run_id,
+            )
+            .order_by(BriefExtractionAttemptRecord.attempt_number)
+        )
+        return [_brief_extraction_attempt(record) for record in records]
+
+
 class SqlAlchemyAuditEventRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1729,6 +1820,47 @@ def _document_extraction_operation(
         completed_at=record.completed_at,
         correlation_id=record.correlation_id,
         version=record.version,
+    )
+
+
+def _brief_extraction_run(record: BriefExtractionRunRecord) -> BriefExtractionRun:
+    return BriefExtractionRun(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        document_extraction_id=record.document_extraction_id,
+        provider_id=record.provider_id,
+        model_id=record.model_id,
+        prompt_template_id=record.prompt_template_id,
+        prompt_template_version=record.prompt_template_version,
+        input_extraction_checksum=record.input_extraction_checksum,
+        status=BriefExtractionRunStatus(record.status),
+        candidate_structured_brief=record.candidate_structured_brief,
+        candidate_digest=record.candidate_digest,
+        candidate_issues=record.candidate_issues,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+    )
+
+
+def _brief_extraction_attempt(
+    record: BriefExtractionAttemptRecord,
+) -> BriefExtractionAttempt:
+    return BriefExtractionAttempt(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        run_id=record.run_id,
+        attempt_number=record.attempt_number,
+        status=BriefExtractionAttemptStatus(record.status),
+        output_digest=record.output_digest,
+        error_code=record.error_code,
+        input_character_count=record.input_character_count,
+        output_character_count=record.output_character_count,
+        started_at=record.started_at,
+        completed_at=record.completed_at,
     )
 
 

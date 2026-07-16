@@ -11,6 +11,12 @@ from services.api.app.domain.brief import (
     RequirementIssueStatus,
     RequirementIssueType,
 )
+from services.api.app.domain.brief_extraction import (
+    BriefExtractionAttempt,
+    BriefExtractionAttemptStatus,
+    BriefExtractionRun,
+    BriefExtractionRunStatus,
+)
 from services.api.app.domain.document_extraction import (
     EXTRACTED_DOCUMENT_SCHEMA_VERSION,
     DocumentExtraction,
@@ -82,6 +88,10 @@ __all__ = [
     "BriefIngestionSourceAssetRelationType",
     "BriefIngestionSourceType",
     "BriefIngestionStatus",
+    "BriefExtractionAttempt",
+    "BriefExtractionAttemptStatus",
+    "BriefExtractionRun",
+    "BriefExtractionRunStatus",
     "DomainError",
     "DocumentExtraction",
     "DocumentExtractionOperation",

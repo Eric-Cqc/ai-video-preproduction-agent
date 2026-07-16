@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第八阶段（deterministic document parsing）。除第七阶段的 verified immutable SourceObject 外，允许：服务端按 verified media type 选择标准库 parser，把 `text/plain`、`text/csv`、`application/json` 转为 bounded immutable DocumentExtraction；输入、输出、CSV 维度、JSON 深度/节点都有硬限制，且 PostgreSQL reservation、UoW 和 Audit 保持原子。PDF/DOCX/XLSX 明确 unsupported。禁止：OCR、动态 parser/plugin、宏/代码执行、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云对象存储、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-039`。
+处于 foundation bootstrap 第九阶段（offline AI Brief extraction safe foundation）。允许：在 verified immutable DocumentExtraction 上通过 model-neutral port 和 deterministic fake provider 离线验证 versioned instructions、严格 Structured Brief Schema output validation、immutable Run/Attempt 与 `human_review_required` candidate 边界。候选绝不自动创建或修改 BriefVersion。禁止：真实 AI/模型调用、Provider SDK/凭据/网络、tool use、URL 抓取、自动接受候选、OCR、动态 parser/plugin、Job/queue、产品 UI、云对象存储或其他云资源。阶段决定见 `docs/adr/ADR-017` 至 `ADR-043`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

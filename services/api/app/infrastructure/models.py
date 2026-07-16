@@ -1240,6 +1240,132 @@ class DocumentExtractionOperationRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 
+class BriefExtractionRunRecord(Base):
+    __tablename__ = "brief_extraction_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_brief_extraction_runs_tenant_project_id",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "document_extraction_id"],
+            [
+                "document_extractions.organization_id",
+                "document_extractions.workspace_id",
+                "document_extractions.project_id",
+                "document_extractions.id",
+            ],
+            name="fk_brief_extraction_runs_document_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "status IN ('human_review_required', 'failed')",
+            name="ck_brief_extraction_run_status",
+        ),
+        CheckConstraint(
+            "input_extraction_checksum ~ '^[0-9a-f]{64}$' AND "
+            "(candidate_digest IS NULL OR candidate_digest ~ '^[0-9a-f]{64}$')",
+            name="ck_brief_extraction_run_digests",
+        ),
+        CheckConstraint(
+            "(status='human_review_required' AND candidate_structured_brief IS NOT NULL "
+            "AND candidate_digest IS NOT NULL) OR "
+            "(status='failed' AND candidate_structured_brief IS NULL "
+            "AND candidate_digest IS NULL)",
+            name="ck_brief_extraction_run_candidate_outcome",
+        ),
+        Index(
+            "ix_brief_extraction_runs_tenant_document",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "document_extraction_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    document_extraction_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_template_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    prompt_template_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    input_extraction_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    candidate_structured_brief: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    candidate_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    candidate_issues: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BriefExtractionAttemptRecord(Base):
+    __tablename__ = "brief_extraction_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "run_id",
+            "attempt_number",
+            name="uq_brief_extraction_attempt_number",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "run_id"],
+            [
+                "brief_extraction_runs.organization_id",
+                "brief_extraction_runs.workspace_id",
+                "brief_extraction_runs.project_id",
+                "brief_extraction_runs.id",
+            ],
+            name="fk_brief_extraction_attempts_run_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("attempt_number >= 1", name="ck_brief_extraction_attempt_number"),
+        CheckConstraint(
+            "status IN ('succeeded', 'malformed_output', 'schema_invalid', 'refused', "
+            "'timeout', 'provider_error')",
+            name="ck_brief_extraction_attempt_status",
+        ),
+        CheckConstraint(
+            "(output_digest IS NULL OR output_digest ~ '^[0-9a-f]{64}$')",
+            name="ck_brief_extraction_attempt_output_digest",
+        ),
+        CheckConstraint(
+            "input_character_count >= 0 AND input_character_count <= 128000 AND "
+            "output_character_count >= 0",
+            name="ck_brief_extraction_attempt_character_counts",
+        ),
+        CheckConstraint(
+            "(status='succeeded' AND error_code IS NULL AND output_digest IS NOT NULL) OR "
+            "(status<>'succeeded' AND error_code IS NOT NULL)",
+            name="ck_brief_extraction_attempt_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    output_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    input_character_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_character_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -1258,7 +1384,7 @@ class AuditEventRecord(Base):
             "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
             "'source_asset.archived', 'source_object.uploaded', "
-            "'document_extraction.completed')",
+            "'document_extraction.completed', 'brief_extraction.completed')",
             name="ck_audit_action",
         ),
         Index(

@@ -3,6 +3,8 @@ from typing import Protocol, Self
 
 from services.api.app.application.repositories import (
     AuditEventRepository,
+    BriefExtractionAttemptRepository,
+    BriefExtractionRunRepository,
     BriefIngestionRepository,
     BriefIngestionSourceAssetRepository,
     BriefRepository,
@@ -41,6 +43,8 @@ class UnitOfWork(Protocol):
     source_object_cleanup_requirements: SourceObjectCleanupRequirementRepository
     document_extractions: DocumentExtractionRepository
     document_extraction_operations: DocumentExtractionOperationRepository
+    brief_extraction_runs: BriefExtractionRunRepository
+    brief_extraction_attempts: BriefExtractionAttemptRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...

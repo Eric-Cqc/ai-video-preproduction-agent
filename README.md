@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds deterministic bounded parsing of verified plain-text, CSV and JSON SourceObjects. It does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, use AI, generate prompts, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an offline deterministic fake-provider foundation for validating Structured Brief candidates from immutable DocumentExtraction text. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -13,12 +13,19 @@ This repository contains the executable foundation for an **AI video preproducti
 - Tenant/Project-scoped SourceAsset metadata aggregates with immutable versions, declared SHA-256/byte-size metadata, PostgreSQL idempotency, CAS and bounded duplicate indication.
 - Streaming octet-stream upload for an existing SourceAssetVersion, observed SHA-256/size verification, immutable opaque-key SourceObject storage, PostgreSQL upload idempotency, bounded compensation records and scoped reads.
 - Immutable DocumentExtraction artifacts for strict UTF-8 plain text, bounded CSV and bounded/canonical JSON, with server-selected parser versions, source-integrity recheck, PostgreSQL idempotency and scoped reads.
+- Model-neutral offline Brief extraction with versioned instructions, a deterministic fake provider, strict canonical Schema validation, immutable Run/Attempt records and a mandatory human-review candidate boundary.
 - Ordered immutable SourceAssetVersion references on accepted Brief ingestion; the order and relation type are part of the canonical ingestion digest.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
-There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+
+## Offline Brief extraction safety foundation
+
+Stage 9 consumes only an existing immutable DocumentExtraction. A versioned server-owned instruction requires one raw JSON object, disables tools/external actions and treats source text as untrusted data. Input is capped at 128,000 characters and output at 262,144 characters. Markdown wrappers, malformed/non-finite JSON, wrong schema versions and extra/invalid fields are classified as failed attempts.
+
+Only canonical Structured Brief v1 output becomes an immutable `human_review_required` candidate. It never creates or updates a BriefVersion or RequirementIssue. Full prompts, source text and raw model output are not persisted or audited; audit stores bounded identifiers, versions, status and counts. The only implementation is a deterministic fixture fake; no endpoint exposes this internal foundation.
 
 ## Deterministic document extraction
 
@@ -49,7 +56,7 @@ Structured Brief ingestion accepts at most ten `source_attachments`. Each item n
 ```text
 apps/web/                         Next.js foundation status
 services/api/app/domain/         Project and versioned Brief domain rules
-services/api/app/application/    tenant use cases, repository ports, UoW port
+services/api/app/application/    tenant use cases, storage/parser/model ports, UoW port
 services/api/app/infrastructure/ SQLAlchemy/PostgreSQL adapters
 services/api/app/presentation/   request context, schemas, routes, error boundary
 services/worker/                  one-shot Worker readiness process
@@ -202,6 +209,6 @@ The checked-in values are local test credentials only. Production requires an ex
 
 ## Architecture and milestone status
 
-The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic extraction. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md) and [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md).
+The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic parsing; ADR-040 through ADR-043 record the offline model/candidate boundary. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md), [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md), and [offline-ai-brief-extraction-plan.md](docs/development/plans/offline-ai-brief-extraction-plan.md).
 
-The next intended milestone is a model-independent, offline AI Brief extraction foundation using only a deterministic fake provider and strict Structured Brief schema validation. Real providers, SDKs, credentials and network calls remain prohibited.
+The next intended milestone is a separate human-review workflow design for explicitly accepting or rejecting candidates without weakening immutable BriefVersion/CAS rules. A real Provider evaluation requires a new privacy, threat, cost and retention ADR first.
