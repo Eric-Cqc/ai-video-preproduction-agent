@@ -220,3 +220,10 @@ The checked-in values are local test credentials only. Production requires an ex
 The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic parsing; ADR-040 through ADR-043 record the offline model/candidate boundary. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md), [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md), and [offline-ai-brief-extraction-plan.md](docs/development/plans/offline-ai-brief-extraction-plan.md).
 
 Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop decisions are recorded by ADR-048 through ADR-052. A real Provider evaluation still requires a new privacy, threat, cost and retention ADR first.
+
+Stage 12 Storyboard/Shot Plan decisions are recorded by ADR-053 through ADR-057.
+The workflow stores immutable structured planning artifacts pinned to complete
+Brief/Concept/Selection/Script lineage and uses only the deterministic offline
+fixture provider. It has no real model SDK, network, image/video generation,
+media rendering, background job, editable board or UI scope. See
+[storyboard-shot-plan.md](docs/development/plans/storyboard-shot-plan.md).

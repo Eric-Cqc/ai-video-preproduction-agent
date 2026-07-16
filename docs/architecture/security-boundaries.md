@@ -30,6 +30,9 @@
 - Brief 状态、current pointer 与 issue mutations 使用数据库条件更新；stale pointer/version 返回 409，失败事务不写成功审计。
 - DATABASE_URL 不写日志，诊断表示隐藏 password；错误不返回 SQL、约束名或堆栈。
 - Audit payload 仅含 changed fields/status/version，不含 secret、Prompt、素材或 Provider response。
+- Storyboard/Shot Plan request digest、Idempotency-Key、operation row、Prompt/raw
+  provider output never cross the API boundary. URL/shell/code/tool-like text is
+  untrusted and rejected; the only provider is an offline deterministic fixture.
 - CORS 仍使用显式 origin/method/header，不允许 wildcard credentials。
 
 ## 冻结决定

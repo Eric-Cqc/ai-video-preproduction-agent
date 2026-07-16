@@ -1488,7 +1488,7 @@ class CreativeConceptRunRecord(Base):
         CheckConstraint("status IN ('completed', 'failed')", name="ck_concept_run_status"),
         CheckConstraint(
             "failure_category IN ('refusal', 'timeout', 'provider_error', "
-            "'malformed_output', 'schema_invalid') OR failure_category IS NULL",
+            "'malformed_output', 'schema_invalid', 'semantic_invalid') OR failure_category IS NULL",
             name="ck_concept_run_failure",
         ),
         CheckConstraint("candidate_count = 3", name="ck_concept_run_candidate_count"),
@@ -1718,6 +1718,19 @@ class ScriptVersionRecord(Base):
             "id",
             name="uq_script_versions_tenant_id",
         ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            "script_run_id",
+            "brief_id",
+            "brief_version_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "concept_selection_id",
+            name="uq_script_versions_lineage",
+        ),
         ForeignKeyConstraint(
             [
                 "organization_id",
@@ -1875,6 +1888,450 @@ class CreativeGenerationOperationRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 
+class StoryboardRunRecord(Base):
+    __tablename__ = "storyboard_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_storyboard_runs_tenant_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            "brief_id",
+            "brief_version_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "concept_selection_id",
+            "script_run_id",
+            "script_version_id",
+            name="uq_storyboard_runs_lineage",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "script_version_id",
+                "script_run_id",
+                "brief_id",
+                "brief_version_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+            ],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+                "script_versions.script_run_id",
+                "script_versions.brief_id",
+                "script_versions.brief_version_id",
+                "script_versions.concept_run_id",
+                "script_versions.concept_candidate_id",
+                "script_versions.concept_selection_id",
+            ],
+            name="fk_storyboard_runs_script_version",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status IN ('completed', 'failed')", name="ck_storyboard_run_status"),
+        CheckConstraint(
+            "failure_category IN ('refusal', 'timeout', 'provider_error', "
+            "'malformed_output', 'schema_invalid', 'semantic_invalid') OR failure_category IS NULL",
+            name="ck_storyboard_run_failure",
+        ),
+        CheckConstraint(
+            "script_content_digest ~ '^[0-9a-f]{64}$'", name="ck_storyboard_run_digest"
+        ),
+        CheckConstraint("version >= 1", name="ck_storyboard_run_version"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_template_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class StoryboardVersionRecord(Base):
+    __tablename__ = "storyboard_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "storyboard_run_id", "version_number", name="uq_storyboard_versions_number"
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_storyboard_versions_tenant_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            "storyboard_run_id",
+            "brief_id",
+            "brief_version_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "concept_selection_id",
+            "script_run_id",
+            "script_version_id",
+            name="uq_storyboard_versions_lineage",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "storyboard_run_id",
+                "brief_id",
+                "brief_version_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+                "script_run_id",
+                "script_version_id",
+            ],
+            [
+                "storyboard_runs.organization_id",
+                "storyboard_runs.workspace_id",
+                "storyboard_runs.project_id",
+                "storyboard_runs.id",
+                "storyboard_runs.brief_id",
+                "storyboard_runs.brief_version_id",
+                "storyboard_runs.concept_run_id",
+                "storyboard_runs.concept_candidate_id",
+                "storyboard_runs.concept_selection_id",
+                "storyboard_runs.script_run_id",
+                "storyboard_runs.script_version_id",
+            ],
+            name="fk_storyboard_versions_run",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_storyboard_version_digest"),
+        CheckConstraint(
+            "version_number = 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60",
+            name="ck_storyboard_version_bounds",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    total_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    scene_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ShotPlanRunRecord(Base):
+    __tablename__ = "shot_plan_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_shot_plan_runs_tenant_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            "storyboard_run_id",
+            "storyboard_version_id",
+            "brief_id",
+            "brief_version_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "concept_selection_id",
+            "script_run_id",
+            "script_version_id",
+            name="uq_shot_plan_runs_lineage",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "storyboard_version_id",
+                "storyboard_run_id",
+                "brief_id",
+                "brief_version_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+                "script_run_id",
+                "script_version_id",
+            ],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+                "storyboard_versions.storyboard_run_id",
+                "storyboard_versions.brief_id",
+                "storyboard_versions.brief_version_id",
+                "storyboard_versions.concept_run_id",
+                "storyboard_versions.concept_candidate_id",
+                "storyboard_versions.concept_selection_id",
+                "storyboard_versions.script_run_id",
+                "storyboard_versions.script_version_id",
+            ],
+            name="fk_shot_plan_runs_storyboard",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status IN ('completed', 'failed')", name="ck_shot_plan_run_status"),
+        CheckConstraint(
+            "failure_category IN ('refusal', 'timeout', 'provider_error', "
+            "'malformed_output', 'schema_invalid') OR failure_category IS NULL",
+            name="ck_shot_plan_run_failure",
+        ),
+        CheckConstraint(
+            "storyboard_content_digest ~ '^[0-9a-f]{64}$'", name="ck_shot_plan_run_digest"
+        ),
+        CheckConstraint("version >= 1", name="ck_shot_plan_run_version"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_template_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class ShotPlanVersionRecord(Base):
+    __tablename__ = "shot_plan_versions"
+    __table_args__ = (
+        UniqueConstraint("shot_plan_run_id", "version_number", name="uq_shot_plan_versions_number"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_shot_plan_versions_tenant_id",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "shot_plan_run_id",
+                "storyboard_run_id",
+                "storyboard_version_id",
+                "brief_id",
+                "brief_version_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+                "script_run_id",
+                "script_version_id",
+            ],
+            [
+                "shot_plan_runs.organization_id",
+                "shot_plan_runs.workspace_id",
+                "shot_plan_runs.project_id",
+                "shot_plan_runs.id",
+                "shot_plan_runs.storyboard_run_id",
+                "shot_plan_runs.storyboard_version_id",
+                "shot_plan_runs.brief_id",
+                "shot_plan_runs.brief_version_id",
+                "shot_plan_runs.concept_run_id",
+                "shot_plan_runs.concept_candidate_id",
+                "shot_plan_runs.concept_selection_id",
+                "shot_plan_runs.script_run_id",
+                "shot_plan_runs.script_version_id",
+            ],
+            name="fk_shot_plan_versions_run",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_shot_plan_version_digest"),
+        CheckConstraint(
+            "version_number = 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60 "
+            "AND shot_count BETWEEN 1 AND 180",
+            name="ck_shot_plan_version_bounds",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    shot_plan_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    total_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    scene_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    shot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class VisualPlanningOperationRecord(Base):
+    __tablename__ = "visual_planning_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_visual_planning_operation_key",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_visual_operation_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_storyboard_run_id"],
+            [
+                "storyboard_runs.organization_id",
+                "storyboard_runs.workspace_id",
+                "storyboard_runs.project_id",
+                "storyboard_runs.id",
+            ],
+            name="fk_visual_operation_storyboard_run",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_storyboard_version_id"],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+            ],
+            name="fk_visual_operation_storyboard_version",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_shot_plan_run_id"],
+            [
+                "shot_plan_runs.organization_id",
+                "shot_plan_runs.workspace_id",
+                "shot_plan_runs.project_id",
+                "shot_plan_runs.id",
+            ],
+            name="fk_visual_operation_shot_run",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_shot_plan_version_id"],
+            [
+                "shot_plan_versions.organization_id",
+                "shot_plan_versions.workspace_id",
+                "shot_plan_versions.project_id",
+                "shot_plan_versions.id",
+            ],
+            name="fk_visual_operation_shot_version",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation IN ('generate_storyboard', 'generate_shot_plan')",
+            name="ck_visual_operation_type",
+        ),
+        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_visual_operation_status"),
+        CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_visual_operation_digest"),
+        CheckConstraint("version >= 1", name="ck_visual_operation_version"),
+        CheckConstraint(
+            "(status='reserved' AND completed_at IS NULL AND outcome_storyboard_run_id IS NULL "
+            "AND outcome_storyboard_version_id IS NULL AND outcome_shot_plan_run_id IS NULL "
+            "AND outcome_shot_plan_version_id IS NULL) OR (status='accepted' "
+            "AND completed_at IS NOT NULL "
+            "AND ((operation='generate_storyboard' AND outcome_storyboard_run_id IS NOT NULL "
+            "AND outcome_storyboard_version_id IS NOT NULL AND outcome_shot_plan_run_id IS NULL "
+            "AND outcome_shot_plan_version_id IS NULL) OR (operation='generate_shot_plan' "
+            "AND outcome_storyboard_run_id IS NULL AND outcome_storyboard_version_id IS NULL "
+            "AND outcome_shot_plan_run_id IS NOT NULL "
+            "AND outcome_shot_plan_version_id IS NOT NULL)))",
+            name="ck_visual_operation_outcome",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    outcome_storyboard_run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_storyboard_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_shot_plan_run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_shot_plan_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -1895,7 +2352,8 @@ class AuditEventRecord(Base):
             "'source_asset.archived', 'source_object.uploaded', "
             "'document_extraction.completed', 'brief_extraction.completed', "
             "'brief_candidate.accepted', 'brief_candidate.rejected', "
-            "'creative_concept.generated', 'creative_concept.selected', 'script.generated')",
+            "'creative_concept.generated', 'creative_concept.selected', 'script.generated', "
+            "'storyboard.generated', 'shot_plan.generated')",
             name="ck_audit_action",
         ),
         Index(

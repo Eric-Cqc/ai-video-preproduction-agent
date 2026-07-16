@@ -21,10 +21,12 @@ describe("Creative contracts v1", () => {
     ).toEqual(fixture("valid-concept-v1.json"));
   });
 
-  it("accepts canonical script content", () => {
-    expect(
-      parseCreativeContent("script", fixture("valid-script-v1.json")),
-    ).toEqual(fixture("valid-script-v1.json"));
+  it.each([
+    ["script", "valid-script-v1.json"],
+    ["storyboard", "valid-storyboard-v1.json"],
+    ["shotPlan", "valid-shot-plan-v1.json"],
+  ] as const)("accepts canonical %s content", (kind, name) => {
+    expect(parseCreativeContent(kind, fixture(name))).toEqual(fixture(name));
   });
 
   it("rejects invalid and unknown concept fields", () => {

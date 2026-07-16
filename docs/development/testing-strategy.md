@@ -10,6 +10,15 @@ SourceAsset tests 使用真实 PostgreSQL 约束覆盖 immutable Version ownersh
 
 Candidate review tests 使用真实 PostgreSQL 覆盖 accept/reject 互斥、same-key replay、accept/reject race 和无永久 `reserved`。Rollback matrix 在首次 Brief 与 successor 两条路径分别注入 Brief/Version/Issue/pointer/finalize/Audit 失败，并比较真实行数、current pointer 与 aggregate version。API matrix 覆盖 owner/admin/member mutation、viewer 只读、统一 opaque 404 与非泄露响应；digest matrix 覆盖 run/Brief/CAS/content/reason/note，approved predecessor 通过 ORM mapper 的全部持久列快照验证不变。
 
+Stage 12 visual-planning tests 使用真实 PostgreSQL 覆盖完整 Storyboard→Shot Plan
+lineage、immutable versions、same-key replay/changed-digest conflict、CAS
+finalize、winner rollback/loser takeover、artifact+operation+Audit atomic rollback、
+owner/admin/member mutation、viewer read-only、opaque 404、bounded audit payload、
+provider failure modes、strict schema/semantic validation、duration tolerance、
+scene/shot identity/order/continuity and Python/TypeScript contract parity. Fake
+provider modes are deterministic and offline; no test invokes a network or media
+generator.
+
 ## 根命令
 
 - `make test-domain`：无数据库领域规则。

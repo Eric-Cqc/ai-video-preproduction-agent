@@ -1,0 +1,177 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-video-preproduction-agent.local/contracts/shot-plan-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "shots"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 180,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shot_id",
+          "shot_number",
+          "storyboard_scene_number",
+          "source_script_scene_number",
+          "shot_type",
+          "framing",
+          "camera_angle",
+          "camera_movement",
+          "subject",
+          "action",
+          "environment",
+          "lighting",
+          "visual_style",
+          "estimated_duration_seconds",
+          "voiceover_segment",
+          "dialogue_segment",
+          "on_screen_text",
+          "transition_in",
+          "transition_out",
+          "continuity_requirements",
+          "production_notes",
+          "generation_prompt",
+          "negative_prompt",
+          "safety_notes"
+        ],
+        "properties": {
+          "shot_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          },
+          "shot_number": { "type": "integer", "minimum": 1, "maximum": 180 },
+          "storyboard_scene_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "source_script_scene_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "shot_type": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "framing": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "camera_angle": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "camera_movement": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "action": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "environment": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "lighting": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "visual_style": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "estimated_duration_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "voiceover_segment": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "dialogue_segment": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "on_screen_text": {
+            "type": "string",
+            "maxLength": 500,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "transition_in": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "transition_out": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "continuity_requirements": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "pattern": "^[^\\u0000-\\u001f]*$"
+            }
+          },
+          "production_notes": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "pattern": "^[^\\u0000-\\u001f]*$"
+            }
+          },
+          "generation_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 1000,
+            "pattern": "^[^\\u0000-\\u001f]*$"
+          },
+          "safety_notes": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 300,
+              "pattern": "^[^\\u0000-\\u001f]*$"
+            }
+          }
+        }
+      }
+    }
+  }
+}

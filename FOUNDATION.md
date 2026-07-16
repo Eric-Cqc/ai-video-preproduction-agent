@@ -4,7 +4,7 @@
 
 本项目是 **AI 视频前期制作系统**：把创意简报转化为可审查、可版本化、可交接的制作蓝图（故事、脚本、镜头、资产、预算/排期假设与导出包）。它帮助人作决定和组织生产，**不是自动成片、渲染、剪辑、发布或投放平台**。
 
-前九阶段已建立工程骨架、tenant-aware PostgreSQL、不可变 Brief、受控 Structured Brief ingestion、SourceAsset、verified SourceObject、确定性 DocumentExtraction，以及离线 deterministic fake provider 的 immutable Run/Attempt 与 `human_review_required` candidate。第十阶段只增加显式人审安全基础：tenant-scoped candidate 读取、幂等 accept/reject、CAS 创建新 draft BriefVersion、atomic Audit 与 immutable approved predecessor。仍不得接入真实模型、SDK、凭据、网络、自动候选接受、Job、产品 UI、云资源或自动成片。阶段决定由 [ADR-017 至 ADR-047](docs/adr/) 追加记录。
+前十一个阶段已建立工程骨架、tenant-aware PostgreSQL、不可变 Brief、受控 Structured Brief ingestion、SourceAsset、verified SourceObject、确定性 DocumentExtraction、人审 candidate，以及离线 Creative Concept/Script lineage。当前授权第十二阶段：在 `feat/storyboard-shot-plan` 实现不可变 Storyboard 与 Shot Plan 前期制作产物的 persistence、repositories、UoW、离线 deterministic provider、services、API、tests 与文档。仍不得接入真实模型、SDK、凭据、网络、图片/视频生成、媒体渲染、Job、产品 UI、云资源或自动成片。阶段决定由 [ADR-017 至 ADR-057](docs/adr/) 追加记录。
 
 ## 冻结的基础决定
 

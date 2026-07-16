@@ -10,6 +10,10 @@ SourceAsset audit 只记录 asset ID、version number、media type、声明 byte
 
 Worker self-check 保持零 handler 与结构化启动信息。没有 hosted logging、OpenTelemetry、production analytics 或全局 audit search。
 
+Storyboard and Shot Plan audit actions (`storyboard.generated`, `shot_plan.generated`)
+are bounded to IDs, schema/count/duration and provider/template identifiers. Replay
+does not append an event; validation/provider failures do not write a success event.
+
 ## 冻结决定
 
 版本与审计必须能关联关键 mutation；日志不替代 AuditEvent，AuditEvent 不替代 canonical domain state。

@@ -26,6 +26,8 @@ from services.api.app.domain import (
     RequirementIssueStatus,
     ScriptRun,
     ScriptVersion,
+    ShotPlanRun,
+    ShotPlanVersion,
     SourceAsset,
     SourceAssetOperation,
     SourceAssetOperationType,
@@ -33,6 +35,10 @@ from services.api.app.domain import (
     SourceObject,
     SourceObjectCleanupRequirement,
     SourceObjectUpload,
+    StoryboardRun,
+    StoryboardVersion,
+    VisualPlanningOperation,
+    VisualPlanningOperationType,
     Workspace,
 )
 
@@ -427,6 +433,65 @@ class CreativeGenerationOperationRepository(Protocol):
     def finalize_accepted(
         self, operation: CreativeGenerationOperation, *, expected_version: int
     ) -> CreativeGenerationOperation: ...
+
+
+class StoryboardRunRepository(Protocol):
+    def add(self, value: StoryboardRun) -> StoryboardRun: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, value_id: UUID
+    ) -> StoryboardRun | None: ...
+
+
+class StoryboardVersionRepository(Protocol):
+    def add(self, value: StoryboardVersion) -> StoryboardVersion: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, value_id: UUID
+    ) -> StoryboardVersion | None: ...
+    def get_for_run(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        storyboard_run_id: UUID,
+        version_number: int,
+    ) -> StoryboardVersion | None: ...
+
+
+class ShotPlanRunRepository(Protocol):
+    def add(self, value: ShotPlanRun) -> ShotPlanRun: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, value_id: UUID
+    ) -> ShotPlanRun | None: ...
+
+
+class ShotPlanVersionRepository(Protocol):
+    def add(self, value: ShotPlanVersion) -> ShotPlanVersion: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, value_id: UUID
+    ) -> ShotPlanVersion | None: ...
+    def get_for_run(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        shot_plan_run_id: UUID,
+        version_number: int,
+    ) -> ShotPlanVersion | None: ...
+
+
+class VisualPlanningOperationRepository(Protocol):
+    def reserve(self, value: VisualPlanningOperation) -> VisualPlanningOperation | None: ...
+    def get_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: VisualPlanningOperationType,
+        idempotency_key: str,
+    ) -> VisualPlanningOperation | None: ...
+    def finalize_accepted(
+        self, value: VisualPlanningOperation, *, expected_version: int
+    ) -> VisualPlanningOperation: ...
 
 
 class RequirementIssueRepository(Protocol):
