@@ -61,7 +61,7 @@ describe("Web-to-API health boundary", () => {
         cwd: repositoryRoot,
         env: {
           ...process.env,
-          APP_ENVIRONMENT: "integration",
+          APP_ENVIRONMENT: "test",
           PYTHONPATH: [
             repositoryRoot,
             path.join(repositoryRoot, "packages/contracts/python"),

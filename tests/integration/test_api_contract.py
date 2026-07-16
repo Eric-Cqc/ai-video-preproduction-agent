@@ -6,7 +6,7 @@ from services.api.app.main import create_app
 
 
 def test_api_boundary_emits_the_canonical_health_contract() -> None:
-    app = create_app(ApiSettings(app_environment="integration"))
+    app = create_app(ApiSettings(app_environment="test"))
     with TestClient(app) as client:
         response = client.get("/api/v1/health")
 

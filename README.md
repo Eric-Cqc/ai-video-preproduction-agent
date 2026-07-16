@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds controlled SourceAsset metadata intake and ordered references from Structured Brief ingestion; it does not upload, store, read or parse files, fetch URLs, use AI, generate prompts, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an offline deterministic fake-provider foundation for validating Structured Brief candidates from immutable DocumentExtraction text. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -11,12 +11,27 @@ This repository contains the executable foundation for an **AI video preproducti
 - Canonical Structured Brief v1 JSON Schema, immutable BriefVersion snapshots, deterministic requirement issues, explicit review/approval, and Brief optimistic concurrency.
 - Project-scoped structured ingestion with canonical validation, stable serialization/SHA-256 digest, PostgreSQL idempotency, replay and atomic audit.
 - Tenant/Project-scoped SourceAsset metadata aggregates with immutable versions, declared SHA-256/byte-size metadata, PostgreSQL idempotency, CAS and bounded duplicate indication.
+- Streaming octet-stream upload for an existing SourceAssetVersion, observed SHA-256/size verification, immutable opaque-key SourceObject storage, PostgreSQL upload idempotency, bounded compensation records and scoped reads.
+- Immutable DocumentExtraction artifacts for strict UTF-8 plain text, bounded CSV and bounded/canonical JSON, with server-selected parser versions, source-integrity recheck, PostgreSQL idempotency and scoped reads.
+- Model-neutral offline Brief extraction with versioned instructions, a deterministic fake provider, strict canonical Schema validation, immutable Run/Attempt records and a mandatory human-review candidate boundary.
 - Ordered immutable SourceAssetVersion references on accepted Brief ingestion; the order and relation type are part of the canonical ingestion digest.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
-There is no file upload, object storage, byte read, checksum verification, MIME sniffing, parsing, OCR, URL retrieval, AI/LLM/model call, Prompt compilation, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature.
+
+## Offline Brief extraction safety foundation
+
+Stage 9 consumes only an existing immutable DocumentExtraction. A versioned server-owned instruction requires one raw JSON object, disables tools/external actions and treats source text as untrusted data. Input is capped at 128,000 characters and output at 262,144 characters. Markdown wrappers, malformed/non-finite JSON, wrong schema versions and extra/invalid fields are classified as failed attempts.
+
+Only canonical Structured Brief v1 output becomes an immutable `human_review_required` candidate. It never creates or updates a BriefVersion or RequirementIssue. Full prompts, source text and raw model output are not persisted or audited; audit stores bounded identifiers, versions, status and counts. The only implementation is a deterministic fixture fake; no endpoint exposes this internal foundation.
+
+## Deterministic document extraction
+
+Extraction is available only after a SourceAssetVersion has verified immutable bytes. The server selects `stdlib_plain_text`, `stdlib_csv`, or `stdlib_json` from the verified media type; callers cannot select a parser or load plugins. Input is capped at 5 MiB and read through StoragePort, then its SHA-256 and size are rechecked. Output is strict UTF-8, newline-normalized and capped at 1 MiB/characters. CSV is capped at 10,000 rows and 100 columns. JSON rejects duplicate keys/non-finite numbers and is capped at depth 32 and 100,000 nodes before sorted compact canonicalization.
+
+Every artifact records parser/source/options/output digests internally and is immutable. Accepted replay precedes later archive state; new extraction on an archived asset returns 409. Audit records identifiers, parser version and counts only—not source or extracted text, filename, checksum, storage key or Idempotency-Key.
 
 ## Controlled structured ingestion
 
@@ -24,9 +39,13 @@ The API supports `create_brief` and `create_version` only for pre-structured can
 
 Brief `source_reference` is a bounded opaque identifier. SourceAsset provenance values are bounded declared metadata: paths, database URLs, credentials, Authorization-like strings, signed URLs and control characters are rejected, and no accepted reference is fetched. HTTP bodies remain capped at 256 KiB and canonical content at 128 KiB. PostgreSQL statement timeout defaults to 5000ms, bounding stalled unique-key waits; timeout rollback leaves no reservation.
 
-## Controlled source-asset metadata intake
+## Controlled source-asset intake and binary storage
 
-`SourceAsset` is a stable identity with `active`/`archived` lifecycle and a CAS-protected current pointer. Every replacement inserts a complete immutable `SourceAssetVersion`; no endpoint edits a version or predecessor. Metadata allows only the documented document media types and a declared size from 1 byte through 100 MiB. The only checksum syntax is lowercase SHA-256; because no bytes enter the system, neither checksum nor byte size is independently verified.
+`SourceAsset` is a stable identity with `active`/`archived` lifecycle and a CAS-protected current pointer. Every replacement inserts a complete immutable `SourceAssetVersion`; no endpoint edits a version or predecessor. Metadata allows only the documented document media types and a declared size from 1 byte through 100 MiB. The only checksum syntax is lowercase SHA-256.
+
+An owner/admin/member can upload one binary object to an active existing version using a bounded `application/octet-stream` body and `Idempotency-Key`. The server streams bytes to a random staging key, incrementally computes observed SHA-256 and byte count, requires exact equality with the immutable declared metadata, then finalizes an opaque immutable object. Filename and tenant IDs never form a storage path. Accepted replay returns 200; different bytes under the same key return 409. Storage success followed by database failure is compensated by deletion; failed compensation creates a bounded internal cleanup requirement and never reports success.
+
+The checked-in `local_filesystem_v1` adapter is permitted only in local/test/ci and is not a production storage choice. PostgreSQL and storage do not share a distributed transaction; ADR-034 records the controlled residual crash window.
 
 Duplicate indication is limited to equal declared checksum, media type and byte size within the same Organization, Workspace and Project. It never merges assets. Source mutations use the same PostgreSQL `reserved → accepted` transaction pattern as Brief ingestion: accepted replay is resolved before current-pointer CAS and creates no additional version or audit record.
 
@@ -37,7 +56,7 @@ Structured Brief ingestion accepts at most ten `source_attachments`. Each item n
 ```text
 apps/web/                         Next.js foundation status
 services/api/app/domain/         Project and versioned Brief domain rules
-services/api/app/application/    tenant use cases, repository ports, UoW port
+services/api/app/application/    tenant use cases, storage/parser/model ports, UoW port
 services/api/app/infrastructure/ SQLAlchemy/PostgreSQL adapters
 services/api/app/presentation/   request context, schemas, routes, error boundary
 services/worker/                  one-shot Worker readiness process
@@ -136,6 +155,10 @@ Protected resources use opaque 404 behavior. A Project/Brief/Version ID alone is
 - explicit `submit`, `approve`, `archive`, issue create/resolve/dismiss, and Brief audit reads
 - `POST/GET .../projects/{project_id}/source-assets`
 - `GET .../source-assets/{source_asset_id}`, `POST/GET .../versions`, and explicit `POST .../archive`
+- `POST .../source-assets/{source_asset_id}/versions/{version_id}/uploads`
+- `GET .../source-assets/{source_asset_id}/versions/{version_id}/object` and `/object/content`
+- `POST .../source-assets/{source_asset_id}/versions/{version_id}/extractions`
+- `GET .../source-assets/{source_asset_id}/versions/{version_id}/extractions/{extraction_id}`
 
 Project PATCH only accepts `name`, `description`, and `expected_version`. Status changes use explicit lifecycle endpoints. Stale versions, invalid lifecycle changes, and slug conflicts return 409. Errors use `{error: {code, message, correlation_id}}` and never expose raw SQL or stack traces.
 
@@ -169,6 +192,9 @@ Use `make` as the public developer entry point; do not run bare `node`, `npm`, o
 | `API_ALLOWED_CORS_ORIGINS`      | `http://localhost:3000`         | Explicit origins; wildcard rejected         |
 | `API_LOG_LEVEL`                 | `INFO`                          | Structured API log level                    |
 | `API_MAX_REQUEST_BYTES`         | `262144`                        | API Content-Length guard                    |
+| `API_MAX_UPLOAD_BYTES`          | `104857600`                     | Streaming upload ceiling                    |
+| `SOURCE_OBJECT_STORAGE_ADAPTER` | `local_filesystem_v1`           | Local/test/ci StoragePort adapter           |
+| `SOURCE_OBJECT_STORAGE_ROOT`    | `.local/source-objects`         | Ignored local object root                   |
 | `DATABASE_URL`                  | repository-local PostgreSQL URL | Application/migration database              |
 | `TEST_DATABASE_URL`             | `foundation_test` URL           | Isolated persistence-test database          |
 | `DATABASE_POOL_SIZE`            | `5`                             | SQLAlchemy pool size                        |
@@ -183,6 +209,6 @@ The checked-in values are local test credentials only. Production requires an ex
 
 ## Architecture and milestone status
 
-The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-016 record the replaceable persistence implementation; ADR-017 through ADR-021 record the versioned Brief foundation; ADR-022 through ADR-026 record controlled structured ingestion; ADR-027 through ADR-031 record controlled SourceAsset metadata intake and Brief attachment. The execution records include [source-asset-intake-plan.md](docs/development/plans/source-asset-intake-plan.md).
+The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic parsing; ADR-040 through ADR-043 record the offline model/candidate boundary. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md), [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md), and [offline-ai-brief-extraction-plan.md](docs/development/plans/offline-ai-brief-extraction-plan.md).
 
-The next intended milestone is a separately reviewed authorization and operational-hardening decision for synchronous structured ingress and metadata intake. It must preserve tenant, immutable-version, audit, size, provenance and canonical-schema rules; byte acceptance, checksum verification, uploads, storage, parsing, URL retrieval, OCR, AI or background processing each require their own reviewed scope and ADR.
+The next intended milestone is a separate human-review workflow design for explicitly accepting or rejecting candidates without weakening immutable BriefVersion/CAS rules. A real Provider evaluation requires a new privacy, threat, cost and retention ADR first.

@@ -11,6 +11,19 @@ from services.api.app.domain.brief import (
     RequirementIssueStatus,
     RequirementIssueType,
 )
+from services.api.app.domain.brief_extraction import (
+    BriefExtractionAttempt,
+    BriefExtractionAttemptStatus,
+    BriefExtractionRun,
+    BriefExtractionRunStatus,
+)
+from services.api.app.domain.document_extraction import (
+    EXTRACTED_DOCUMENT_SCHEMA_VERSION,
+    DocumentExtraction,
+    DocumentExtractionOperation,
+    DocumentExtractionOperationStatus,
+    DocumentExtractionStatus,
+)
 from services.api.app.domain.errors import (
     ApprovalBlocked,
     DomainError,
@@ -53,6 +66,13 @@ from services.api.app.domain.source_asset import (
     SourceAssetStatus,
     SourceAssetVersion,
 )
+from services.api.app.domain.source_object import (
+    SourceObject,
+    SourceObjectCleanupRequirement,
+    SourceObjectState,
+    SourceObjectUpload,
+    SourceObjectUploadStatus,
+)
 
 __all__ = [
     "ApprovalBlocked",
@@ -68,7 +88,16 @@ __all__ = [
     "BriefIngestionSourceAssetRelationType",
     "BriefIngestionSourceType",
     "BriefIngestionStatus",
+    "BriefExtractionAttempt",
+    "BriefExtractionAttemptStatus",
+    "BriefExtractionRun",
+    "BriefExtractionRunStatus",
     "DomainError",
+    "DocumentExtraction",
+    "DocumentExtractionOperation",
+    "DocumentExtractionOperationStatus",
+    "DocumentExtractionStatus",
+    "EXTRACTED_DOCUMENT_SCHEMA_VERSION",
     "InvalidBriefMutation",
     "InvalidBriefTransition",
     "InvalidProjectMutation",
@@ -95,6 +124,11 @@ __all__ = [
     "SourceAssetSourceType",
     "SourceAssetStatus",
     "SourceAssetVersion",
+    "SourceObject",
+    "SourceObjectCleanupRequirement",
+    "SourceObjectState",
+    "SourceObjectUpload",
+    "SourceObjectUploadStatus",
     "VersionConflict",
     "Workspace",
     "WorkspaceStatus",

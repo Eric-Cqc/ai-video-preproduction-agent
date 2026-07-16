@@ -25,9 +25,19 @@ class ApiSettings(BaseSettings):
     database_statement_timeout_ms: int = Field(default=5000, ge=100, le=120_000)
     database_echo: bool = False
     api_max_request_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
+    api_max_upload_bytes: int = Field(default=104_857_600, ge=1, le=104_857_600)
+    source_object_storage_adapter: Literal["local_filesystem_v1", "disabled"] = (
+        "local_filesystem_v1"
+    )
+    source_object_storage_root: str = Field(default=".local/source-objects", min_length=1)
 
     @model_validator(mode="after")
     def validate_database_configuration(self) -> "ApiSettings":
+        if (
+            self.source_object_storage_adapter == "local_filesystem_v1"
+            and self.app_environment not in TEMPORARY_IDENTITY_ENVIRONMENTS
+        ):
+            raise ValueError("local filesystem object storage is only allowed in local/test/ci")
         if self.database_url is None:
             if self.app_environment not in TEMPORARY_IDENTITY_ENVIRONMENTS:
                 raise ValueError("DATABASE_URL is required outside local, test, and ci")

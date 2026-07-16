@@ -20,3 +20,7 @@ class InvalidRequest(ApplicationError):
 
 class TemporaryIdentityDisabled(ApplicationError):
     code = "temporary_identity_disabled"
+
+
+class StorageUnavailable(ApplicationError):
+    code = "storage_unavailable"
