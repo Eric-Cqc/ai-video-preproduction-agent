@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an explicit human review, immutable revision and deterministic delivery-package loop on top of Storyboard and Shot Plan artifacts. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
+This repository contains a local release candidate for an **AI video preproduction system**. It provides a real interactive, tenant-aware Golden Path from canonical source upload through deterministic offline planning, human approval, immutable delivery package, and verified ZIP download. It makes no real model call and does not perform OCR, fetch external URLs, render, publish, or deliver video.
 
 ## Current capabilities
 

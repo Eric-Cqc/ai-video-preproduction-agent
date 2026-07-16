@@ -9,6 +9,8 @@ from services.api.app.application.provider_readiness import (
 
 
 def test_offline_capability_rejects_remote_and_tool_like_requests() -> None:
+    workflow = require_offline_capability("fixture_workflow", "local_golden_path")
+    assert workflow.execution_mode.value == "deterministic_offline"
     capability = require_offline_capability("fixture_visual_planning", "storyboard")
     assert not capability.supports_tools
     assert not capability.supports_external_fetch

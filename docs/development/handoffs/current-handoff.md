@@ -1,8 +1,8 @@
 # Current project handoff
 
-> Authoritative current state (2026-07-17): Stages 1–13 are complete and merged
-> into `main`. Stages 14–19 productization epic is authorized on
-> `feat/productization-epic`, starting from migration head `a1b2c3d4e5f6`.
+> Authoritative current state (2026-07-17): Stages 1–13 are complete and merged.
+> Stages 14–19 are complete locally on `feat/productization-epic`; the interactive
+> Golden Path and local RC pass at unchanged migration head `a1b2c3d4e5f6`.
 > The remainder of this document records historical handoff material from the
 > earlier Source Asset milestone; do not use its old branch, head, or next-step
 > instructions as current scope.

@@ -4,7 +4,7 @@
 
 本项目是 **AI 视频前期制作系统**：把创意简报转化为可审查、可版本化、可交接的制作蓝图（故事、脚本、镜头、资产、预算/排期假设与导出包）。它帮助人作决定和组织生产，**不是自动成片、渲染、剪辑、发布或投放平台**。
 
-第1–13阶段已建立工程骨架、tenant-aware PostgreSQL、不可变 Brief、受控 ingestion、SourceAsset、SourceObject、DocumentExtraction、人审 candidate、Creative Concept/Script、Storyboard、Shot Plan、Review、Revision 与 Delivery lineage。当前授权产品化 epic：在 `feat/productization-epic` 完成第14–19阶段的本地产品界面、typed API client、确定性 demo、可靠性/安全/无障碍加固、provider readiness boundary、local release candidate 与全仓审计。仍不得接入真实模型、SDK、凭据、网络、图片/视频生成、媒体渲染、云资源、复杂 Job/queue、自动成片或第20阶段范围。阶段决定由 [ADR-017 至 ADR-063](docs/adr/) 追加记录。
+第1–13阶段已建立完整不可变制作 lineage；第14–19阶段已在 `feat/productization-epic` 本地完成产品界面、真实交互 Golden Path、typed API client、确定性 demo、可靠性/安全/无障碍加固、provider readiness boundary、local release candidate 与全仓终审。仍不得接入真实模型、SDK、凭据、网络、图片/视频生成、媒体渲染、云资源、复杂 Job/queue、自动成片或第20阶段范围。阶段决定由 [ADR-017 至 ADR-063](docs/adr/) 追加记录。
 
 ## 冻结的基础决定
 

@@ -106,13 +106,13 @@ rc-up: db-up db-upgrade
 	API_BASE_URL=http://127.0.0.1:$(RC_API_PORT) $(MAKE) build
 	@mkdir -p .local/rc; \
 	if ! test -f .local/rc/api.pid || ! kill -0 $$(cat .local/rc/api.pid) 2>/dev/null; then \
-	  $(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port $(RC_API_PORT) >.local/rc/api.log 2>&1 & echo $$! >.local/rc/api.pid; \
+	  nohup $(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port $(RC_API_PORT) >.local/rc/api.log 2>&1 & echo $$! >.local/rc/api.pid; \
 	fi; \
 	if ! test -f .local/rc/web.pid || ! kill -0 $$(cat .local/rc/web.pid) 2>/dev/null; then \
-	  WEB_PORT=$(RC_WEB_PORT) $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/web.log 2>&1 & echo $$! >.local/rc/web.pid; \
+	  WEB_PORT=$(RC_WEB_PORT) nohup $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/web.log 2>&1 & echo $$! >.local/rc/web.pid; \
 	fi; \
-	for attempt in $$(seq 1 30); do curl --fail --silent http://127.0.0.1:$(RC_API_PORT)/api/v1/health | grep -q '"service":"foundation-api"' && curl --fail --silent http://127.0.0.1:$(RC_WEB_PORT) >/dev/null && exit 0; sleep 1; done; \
-	exit 1
+	ready=0; for attempt in $$(seq 1 30); do if curl --fail --silent http://127.0.0.1:$(RC_API_PORT)/api/v1/health | grep -q '"service":"foundation-api"' && curl --fail --silent http://127.0.0.1:$(RC_WEB_PORT) >/dev/null; then ready=1; break; fi; sleep 1; done; \
+	test $$ready -eq 1
 
 rc-seed:
 	APP_ENVIRONMENT=local API_BASE_URL=http://127.0.0.1:$(RC_API_PORT) $(UV_RUN) python -m infra.scripts.rc_seed
@@ -122,10 +122,14 @@ rc-smoke:
 
 demo-smoke: rc-smoke
 
-rc-check: db-current rc-smoke
-	@curl --fail --silent http://127.0.0.1:$(RC_API_PORT)/api/v1/health | grep -q '"service":"foundation-api"'
-	@curl --fail --silent http://127.0.0.1:$(RC_WEB_PORT) >/dev/null
-	@test -w .local/source-objects || mkdir -p .local/source-objects
+rc-check: db-up db-upgrade build db-current rc-smoke
+	@set -e; \
+	$(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port 18001 >.local/rc/check-api.log 2>&1 & api_pid=$$!; \
+	WEB_PORT=13001 API_BASE_URL=http://127.0.0.1:18001 $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/check-web.log 2>&1 & web_pid=$$!; \
+	trap 'kill $$api_pid $$web_pid 2>/dev/null || true' EXIT INT TERM; \
+	ready=0; for attempt in $$(seq 1 30); do if curl --fail --silent http://127.0.0.1:18001/api/v1/health | grep -q '"service":"foundation-api"' && curl --fail --silent http://127.0.0.1:13001 >/dev/null; then ready=1; break; fi; sleep 1; done; \
+	test $$ready -eq 1; \
+	test -w .local/source-objects || mkdir -p .local/source-objects
 
 rc-down:
 	@for service in api web; do if test -f .local/rc/$$service.pid; then kill $$(cat .local/rc/$$service.pid) 2>/dev/null || true; rm -f .local/rc/$$service.pid; fi; done

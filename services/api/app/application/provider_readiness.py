@@ -35,6 +35,15 @@ class ProviderCapability:
 
 OFFLINE_CAPABILITIES = (
     ProviderCapability(
+        "fixture_workflow",
+        "fixture-workflow-v1",
+        "local_golden_path",
+        ProviderExecutionMode.DETERMINISTIC_OFFLINE,
+        frozenset({"structured-brief-v1", "creative-concept-v1", "script-v1"}),
+        131_072,
+        262_144,
+    ),
+    ProviderCapability(
         "fixture_fake",
         "fixture-model-v1",
         "brief_extraction",
