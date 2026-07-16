@@ -13,6 +13,9 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
 from services.api.app.application.brief_services import BriefApplicationService
+from services.api.app.application.document_extraction_services import (
+    DocumentExtractionApplicationService,
+)
 from services.api.app.application.errors import (
     ApplicationError,
     ResourceConflict,
@@ -24,7 +27,10 @@ from services.api.app.application.ingestion_services import BriefIngestionApplic
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.application.source_asset_services import SourceAssetApplicationService
 from services.api.app.application.source_object_services import SourceObjectApplicationService
-from services.api.app.application.storage import LocalFilesystemStorageAdapter
+from services.api.app.application.storage import (
+    DisabledStorageAdapter,
+    LocalFilesystemStorageAdapter,
+)
 from services.api.app.config import ApiSettings, get_api_settings
 from services.api.app.domain import (
     ApprovalBlocked,
@@ -41,6 +47,9 @@ from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
 from services.api.app.presentation.brief_routes import router as brief_router
+from services.api.app.presentation.document_extraction_routes import (
+    router as document_extraction_router,
+)
 from services.api.app.presentation.ingestion_routes import router as ingestion_router
 from services.api.app.presentation.routes import router as tenant_router
 from services.api.app.presentation.source_asset_routes import router as source_asset_router
@@ -105,11 +114,18 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.source_asset_application_service = SourceAssetApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
-    storage = LocalFilesystemStorageAdapter(Path(resolved_settings.source_object_storage_root))
+    storage = (
+        LocalFilesystemStorageAdapter(Path(resolved_settings.source_object_storage_root))
+        if resolved_settings.source_object_storage_adapter == "local_filesystem_v1"
+        else DisabledStorageAdapter()
+    )
     app.state.source_object_application_service = SourceObjectApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory),
         storage,
         max_upload_bytes=resolved_settings.api_max_upload_bytes,
+    )
+    app.state.document_extraction_application_service = DocumentExtractionApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory), storage
     )
     app.add_middleware(
         CORSMiddleware,
@@ -132,6 +148,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(ingestion_router)
     app.include_router(source_asset_router)
     app.include_router(source_object_router)
+    app.include_router(document_extraction_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next: RequestResponseEndpoint) -> Response:

@@ -4,7 +4,7 @@
 
 本项目是 **AI 视频前期制作系统**：把创意简报转化为可审查、可版本化、可交接的制作蓝图（故事、脚本、镜头、资产、预算/排期假设与导出包）。它帮助人作决定和组织生产，**不是自动成片、渲染、剪辑、发布或投放平台**。
 
-第一至五阶段已建立工程骨架、tenant-aware PostgreSQL、不可变 Brief 与受控 Structured Brief ingestion。当前第六阶段增加受控 SourceAsset metadata intake：只记录 tenant/Project-scoped 的声明式元数据与不可变版本，并可把已存在的版本有序关联到 Brief ingestion；系统不接收、存储、读取或校验文件字节。仍不得实现上传、object storage、解析、OCR、URL 抓取、AI、Prompt、Provider、Job、产品 UI、云资源或自动成片。阶段决定由 [ADR-017 至 ADR-031](docs/adr/) 追加记录。
+前七阶段已建立工程骨架、tenant-aware PostgreSQL、不可变 Brief、受控 Structured Brief ingestion、SourceAsset metadata 与 verified immutable SourceObject。第八阶段增加确定性文档解析：只支持标准库 plain text、CSV、JSON，产生 bounded immutable DocumentExtraction；PDF/DOCX/XLSX 不伪造支持。仍不得实现 OCR、URL 抓取、AI、Prompt、模型/媒体 Provider、Job、产品 UI、云资源或自动成片。阶段决定由 [ADR-017 至 ADR-039](docs/adr/) 追加记录。
 
 ## 冻结的基础决定
 

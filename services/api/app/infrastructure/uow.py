@@ -8,6 +8,8 @@ from services.api.app.application.repositories import (
     BriefIngestionSourceAssetRepository,
     BriefRepository,
     BriefVersionRepository,
+    DocumentExtractionOperationRepository,
+    DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
     ProjectRepository,
@@ -27,6 +29,8 @@ from services.api.app.infrastructure.repositories import (
     SqlAlchemyBriefIngestionSourceAssetRepository,
     SqlAlchemyBriefRepository,
     SqlAlchemyBriefVersionRepository,
+    SqlAlchemyDocumentExtractionOperationRepository,
+    SqlAlchemyDocumentExtractionRepository,
     SqlAlchemyMembershipRepository,
     SqlAlchemyOrganizationRepository,
     SqlAlchemyProjectRepository,
@@ -57,6 +61,8 @@ class SqlAlchemyUnitOfWork:
     source_objects: SourceObjectRepository
     source_object_uploads: SourceObjectUploadRepository
     source_object_cleanup_requirements: SourceObjectCleanupRequirementRepository
+    document_extractions: DocumentExtractionRepository
+    document_extraction_operations: DocumentExtractionOperationRepository
     audit_events: AuditEventRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -83,6 +89,10 @@ class SqlAlchemyUnitOfWork:
         self.source_object_uploads = SqlAlchemySourceObjectUploadRepository(self.session)
         self.source_object_cleanup_requirements = (
             SqlAlchemySourceObjectCleanupRequirementRepository(self.session)
+        )
+        self.document_extractions = SqlAlchemyDocumentExtractionRepository(self.session)
+        self.document_extraction_operations = SqlAlchemyDocumentExtractionOperationRepository(
+            self.session
         )
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
         return self

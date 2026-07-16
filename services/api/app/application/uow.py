@@ -7,6 +7,8 @@ from services.api.app.application.repositories import (
     BriefIngestionSourceAssetRepository,
     BriefRepository,
     BriefVersionRepository,
+    DocumentExtractionOperationRepository,
+    DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
     ProjectRepository,
@@ -37,6 +39,8 @@ class UnitOfWork(Protocol):
     source_objects: SourceObjectRepository
     source_object_uploads: SourceObjectUploadRepository
     source_object_cleanup_requirements: SourceObjectCleanupRequirementRepository
+    document_extractions: DocumentExtractionRepository
+    document_extraction_operations: DocumentExtractionOperationRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...

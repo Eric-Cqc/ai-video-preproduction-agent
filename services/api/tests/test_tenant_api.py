@@ -206,7 +206,11 @@ def test_context_validation_and_nonproduction_guard(
     assert missing.json()["error"]["code"] == "invalid_request"
 
     production_app = create_app(
-        ApiSettings(app_environment="production", database_url=test_database_url)
+        ApiSettings(
+            app_environment="production",
+            database_url=test_database_url,
+            source_object_storage_adapter="disabled",
+        )
     )
     with TestClient(production_app) as production_client:
         blocked = production_client.post(

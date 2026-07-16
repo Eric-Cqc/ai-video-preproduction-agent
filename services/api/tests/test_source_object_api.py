@@ -29,7 +29,12 @@ def _assets_path(org: str, workspace: str, project: str) -> str:
     return f"/api/v1/organizations/{org}/workspaces/{workspace}/projects/{project}/source-assets"
 
 
-def _create_target(client: TestClient, content: bytes, label: str = "upload") -> tuple[str, ...]:
+def _create_target(
+    client: TestClient,
+    content: bytes,
+    label: str = "upload",
+    media_type: str = "text/plain",
+) -> tuple[str, ...]:
     org, workspace, project = bootstrap(client, label)
     request_headers = headers("actor:owner", org, workspace)
     request_headers["Idempotency-Key"] = f"{label}-metadata-key"
@@ -39,7 +44,7 @@ def _create_target(client: TestClient, content: bytes, label: str = "upload") ->
         json={
             "display_name": "Uploaded source",
             "original_filename": "../../never-a-path.txt",
-            "media_type": "text/plain",
+            "media_type": media_type,
             "byte_size": len(content),
             "checksum_algorithm": "sha256",
             "checksum_value": hashlib.sha256(content).hexdigest(),
@@ -57,7 +62,7 @@ def _create_target(client: TestClient, content: bytes, label: str = "upload") ->
         json={
             "display_name": "Uploaded source",
             "original_filename": "customer-source.txt",
-            "media_type": "text/plain",
+            "media_type": media_type,
             "byte_size": len(content),
             "checksum_algorithm": "sha256",
             "checksum_value": hashlib.sha256(content).hexdigest(),

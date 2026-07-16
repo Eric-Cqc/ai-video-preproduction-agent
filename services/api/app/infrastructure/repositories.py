@@ -20,6 +20,10 @@ from services.api.app.domain import (
     BriefStatus,
     BriefVersion,
     BriefVersionLifecycle,
+    DocumentExtraction,
+    DocumentExtractionOperation,
+    DocumentExtractionOperationStatus,
+    DocumentExtractionStatus,
     Membership,
     MembershipRole,
     MembershipStatus,
@@ -54,6 +58,8 @@ from services.api.app.infrastructure.models import (
     BriefIngestionSourceAssetRecord,
     BriefRecord,
     BriefVersionRecord,
+    DocumentExtractionOperationRecord,
+    DocumentExtractionRecord,
     MembershipRecord,
     OrganizationRecord,
     ProjectRecord,
@@ -1113,6 +1119,147 @@ class SqlAlchemySourceObjectCleanupRequirementRepository:
         return requirement
 
 
+class SqlAlchemyDocumentExtractionRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, extraction: DocumentExtraction) -> DocumentExtraction:
+        record = DocumentExtractionRecord(
+            id=extraction.id,
+            organization_id=extraction.organization_id,
+            workspace_id=extraction.workspace_id,
+            project_id=extraction.project_id,
+            source_asset_id=extraction.source_asset_id,
+            source_asset_version_id=extraction.source_asset_version_id,
+            source_object_id=extraction.source_object_id,
+            parser_id=extraction.parser_id,
+            parser_version=extraction.parser_version,
+            source_checksum_algorithm=extraction.source_checksum_algorithm,
+            source_checksum_value=extraction.source_checksum_value,
+            options_digest=extraction.options_digest,
+            extraction_checksum=extraction.extraction_checksum,
+            status=extraction.status.value,
+            extracted_document=extraction.extracted_document,
+            character_count=extraction.character_count,
+            warning_count=extraction.warning_count,
+            truncated=extraction.truncated,
+            created_by_actor_subject=extraction.created_by_actor_subject,
+            created_at=extraction.created_at,
+            schema_version=extraction.schema_version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "document_extraction_conflict", "document extraction already exists"
+        )
+        return _document_extraction(record)
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+        extraction_id: UUID,
+    ) -> DocumentExtraction | None:
+        record = self.session.scalar(
+            select(DocumentExtractionRecord).where(
+                DocumentExtractionRecord.organization_id == organization_id,
+                DocumentExtractionRecord.workspace_id == workspace_id,
+                DocumentExtractionRecord.project_id == project_id,
+                DocumentExtractionRecord.source_asset_id == source_asset_id,
+                DocumentExtractionRecord.source_asset_version_id == source_asset_version_id,
+                DocumentExtractionRecord.id == extraction_id,
+            )
+        )
+        return _document_extraction(record) if record is not None else None
+
+
+class SqlAlchemyDocumentExtractionOperationRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, operation: DocumentExtractionOperation) -> DocumentExtractionOperation | None:
+        if operation.status is not DocumentExtractionOperationStatus.RESERVED:
+            raise ValueError("only reserved extraction operations may be inserted")
+        record = self.session.scalar(
+            insert(DocumentExtractionOperationRecord)
+            .values(
+                id=operation.id,
+                organization_id=operation.organization_id,
+                workspace_id=operation.workspace_id,
+                project_id=operation.project_id,
+                source_asset_id=operation.source_asset_id,
+                source_asset_version_id=operation.source_asset_version_id,
+                extraction_id=None,
+                idempotency_key=operation.idempotency_key,
+                request_digest=operation.request_digest,
+                status=operation.status.value,
+                submitted_by_actor_subject=operation.submitted_by_actor_subject,
+                submitted_at=operation.submitted_at,
+                completed_at=None,
+                correlation_id=operation.correlation_id,
+                version=operation.version,
+            )
+            .on_conflict_do_nothing(constraint="uq_document_extraction_operations_idempotency")
+            .returning(DocumentExtractionOperationRecord)
+        )
+        return _document_extraction_operation(record) if record is not None else None
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        idempotency_key: str,
+    ) -> DocumentExtractionOperation | None:
+        record = self.session.scalar(
+            select(DocumentExtractionOperationRecord).where(
+                DocumentExtractionOperationRecord.organization_id == organization_id,
+                DocumentExtractionOperationRecord.workspace_id == workspace_id,
+                DocumentExtractionOperationRecord.project_id == project_id,
+                DocumentExtractionOperationRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _document_extraction_operation(record) if record is not None else None
+
+    def finalize_accepted(
+        self,
+        operation: DocumentExtractionOperation,
+        *,
+        extraction_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> DocumentExtractionOperation:
+        record = self.session.scalar(
+            update(DocumentExtractionOperationRecord)
+            .where(
+                DocumentExtractionOperationRecord.organization_id == operation.organization_id,
+                DocumentExtractionOperationRecord.workspace_id == operation.workspace_id,
+                DocumentExtractionOperationRecord.project_id == operation.project_id,
+                DocumentExtractionOperationRecord.id == operation.id,
+                DocumentExtractionOperationRecord.source_asset_id == operation.source_asset_id,
+                DocumentExtractionOperationRecord.source_asset_version_id
+                == operation.source_asset_version_id,
+                DocumentExtractionOperationRecord.idempotency_key == operation.idempotency_key,
+                DocumentExtractionOperationRecord.request_digest == operation.request_digest,
+                DocumentExtractionOperationRecord.status
+                == DocumentExtractionOperationStatus.RESERVED.value,
+                DocumentExtractionOperationRecord.version == expected_version,
+            )
+            .values(
+                status=DocumentExtractionOperationStatus.ACCEPTED.value,
+                extraction_id=extraction_id,
+                completed_at=completed_at,
+                version=expected_version + 1,
+            )
+            .returning(DocumentExtractionOperationRecord)
+        )
+        if record is None:
+            raise VersionConflict("document extraction operation changed before acceptance")
+        return _document_extraction_operation(record)
+
+
 class SqlAlchemyRequirementIssueRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1529,6 +1676,54 @@ def _source_object_upload(record: SourceObjectUploadRecord) -> SourceObjectUploa
         idempotency_key=record.idempotency_key,
         request_digest=record.request_digest,
         status=SourceObjectUploadStatus(record.status),
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
+        version=record.version,
+    )
+
+
+def _document_extraction(record: DocumentExtractionRecord) -> DocumentExtraction:
+    return DocumentExtraction(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        source_object_id=record.source_object_id,
+        parser_id=record.parser_id,
+        parser_version=record.parser_version,
+        source_checksum_algorithm=record.source_checksum_algorithm,
+        source_checksum_value=record.source_checksum_value,
+        options_digest=record.options_digest,
+        extraction_checksum=record.extraction_checksum,
+        status=DocumentExtractionStatus(record.status),
+        extracted_document=record.extracted_document,
+        character_count=record.character_count,
+        warning_count=record.warning_count,
+        truncated=record.truncated,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        schema_version=record.schema_version,
+    )
+
+
+def _document_extraction_operation(
+    record: DocumentExtractionOperationRecord,
+) -> DocumentExtractionOperation:
+    return DocumentExtractionOperation(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        extraction_id=record.extraction_id,
+        idempotency_key=record.idempotency_key,
+        request_digest=record.request_digest,
+        status=DocumentExtractionOperationStatus(record.status),
         submitted_by_actor_subject=record.submitted_by_actor_subject,
         submitted_at=record.submitted_at,
         completed_at=record.completed_at,

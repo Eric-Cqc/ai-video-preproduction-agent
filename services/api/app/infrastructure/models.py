@@ -1063,6 +1063,183 @@ class SourceObjectCleanupRequirementRecord(Base):
     )
 
 
+class DocumentExtractionRecord(Base):
+    __tablename__ = "document_extractions"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_document_extractions_tenant_project_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "source_asset_id",
+            "source_asset_version_id",
+            "parser_id",
+            "parser_version",
+            "options_digest",
+            name="uq_document_extractions_parser_result",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_document_extractions_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_object_id"],
+            [
+                "source_objects.organization_id",
+                "source_objects.workspace_id",
+                "source_objects.project_id",
+                "source_objects.id",
+            ],
+            name="fk_document_extractions_object_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status = 'completed'", name="ck_document_extraction_status"),
+        CheckConstraint(
+            "source_checksum_algorithm = 'sha256'",
+            name="ck_document_extraction_source_checksum_algorithm",
+        ),
+        CheckConstraint(
+            "source_checksum_value ~ '^[0-9a-f]{64}$' "
+            "AND options_digest ~ '^[0-9a-f]{64}$' "
+            "AND extraction_checksum ~ '^[0-9a-f]{64}$'",
+            name="ck_document_extraction_digests",
+        ),
+        CheckConstraint(
+            "character_count >= 0 AND character_count <= 1048576",
+            name="ck_document_extraction_character_count",
+        ),
+        CheckConstraint("warning_count >= 0", name="ck_document_extraction_warning_count"),
+        CheckConstraint("truncated = false", name="ck_document_extraction_not_truncated"),
+        CheckConstraint("schema_version = '1.0.0'", name="ck_document_extraction_schema_version"),
+        Index(
+            "ix_document_extractions_tenant_source_version",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "source_asset_id",
+            "source_asset_version_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_object_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    parser_id: Mapped[str] = mapped_column(String(60), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_checksum_algorithm: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_checksum_value: Mapped[str] = mapped_column(String(64), nullable=False)
+    options_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    extraction_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    extracted_document: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    character_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    warning_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    truncated: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+
+
+class DocumentExtractionOperationRecord(Base):
+    __tablename__ = "document_extraction_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "idempotency_key",
+            name="uq_document_extraction_operations_idempotency",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_document_extraction_operations_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "extraction_id"],
+            [
+                "document_extractions.organization_id",
+                "document_extractions.workspace_id",
+                "document_extractions.project_id",
+                "document_extractions.id",
+            ],
+            name="fk_document_extraction_operations_result_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "request_digest ~ '^[0-9a-f]{64}$'", name="ck_document_extraction_operation_digest"
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted')", name="ck_document_extraction_operation_status"
+        ),
+        CheckConstraint("version >= 1", name="ck_document_extraction_operation_version"),
+        CheckConstraint(
+            "(status='reserved' AND extraction_id IS NULL "
+            "AND completed_at IS NULL) OR (status='accepted' "
+            "AND extraction_id IS NOT NULL AND completed_at IS NOT NULL)",
+            name="ck_document_extraction_operation_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    extraction_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -1080,7 +1257,8 @@ class AuditEventRecord(Base):
             "'brief.issue_resolved', 'brief.issue_dismissed', 'brief.ingestion_accepted', "
             "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
-            "'source_asset.archived', 'source_object.uploaded')",
+            "'source_asset.archived', 'source_object.uploaded', "
+            "'document_extraction.completed')",
             name="ck_audit_action",
         ),
         Index(

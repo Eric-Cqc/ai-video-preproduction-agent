@@ -26,7 +26,9 @@ class ApiSettings(BaseSettings):
     database_echo: bool = False
     api_max_request_bytes: int = Field(default=262_144, ge=1024, le=1_048_576)
     api_max_upload_bytes: int = Field(default=104_857_600, ge=1, le=104_857_600)
-    source_object_storage_adapter: Literal["local_filesystem_v1"] = "local_filesystem_v1"
+    source_object_storage_adapter: Literal["local_filesystem_v1", "disabled"] = (
+        "local_filesystem_v1"
+    )
     source_object_storage_root: str = Field(default=".local/source-objects", min_length=1)
 
     @model_validator(mode="after")

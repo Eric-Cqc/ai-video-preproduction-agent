@@ -12,7 +12,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "a7b8c9d0e1f2"
+    assert revision == "b8c9d0e1f2a3"
     assert tables == {
         "organizations",
         "workspaces",
@@ -30,6 +30,8 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
         "source_objects",
         "source_object_uploads",
         "source_object_cleanup_requirements",
+        "document_extractions",
+        "document_extraction_operations",
     }
 
 

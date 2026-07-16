@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第六阶段（controlled source-asset metadata intake）。允许：在既有 tenant persistence 内记录有界 SourceAsset 元数据与不可变 SourceAssetVersion，并把同 tenant、同 Project 的 active SourceAssetVersion 作为有序引用附加到 accepted Structured Brief ingestion。系统不接收、存储、读取或验证文件字节；SHA-256 与 byte size 都是客户端声明值。SourceAsset 和 Brief ingestion mutation 均使用 tenant-scoped PostgreSQL reservation、CAS（适用时）与单一 UoW transaction；`reserved` 是内部事务状态，绝不作为 API outcome。禁止：文件上传、object storage、解析、OCR、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-031`。
+处于 foundation bootstrap 第八阶段（deterministic document parsing）。除第七阶段的 verified immutable SourceObject 外，允许：服务端按 verified media type 选择标准库 parser，把 `text/plain`、`text/csv`、`application/json` 转为 bounded immutable DocumentExtraction；输入、输出、CSV 维度、JSON 深度/节点都有硬限制，且 PostgreSQL reservation、UoW 和 Audit 保持原子。PDF/DOCX/XLSX 明确 unsupported。禁止：OCR、动态 parser/plugin、宏/代码执行、URL 抓取、AI/模型调用、Prompt、Provider、Job/queue、产品 UI、云对象存储、云资源及真实 Provider 调用。阶段决定见 `docs/adr/ADR-017` 至 `ADR-039`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

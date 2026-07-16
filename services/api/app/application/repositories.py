@@ -9,6 +9,8 @@ from services.api.app.domain import (
     BriefIngestionOperation,
     BriefIngestionSourceAsset,
     BriefVersion,
+    DocumentExtraction,
+    DocumentExtractionOperation,
     Membership,
     Organization,
     Project,
@@ -269,6 +271,43 @@ class SourceObjectCleanupRequirementRepository(Protocol):
     def add(
         self, requirement: SourceObjectCleanupRequirement
     ) -> SourceObjectCleanupRequirement: ...
+
+
+class DocumentExtractionRepository(Protocol):
+    def add(self, extraction: DocumentExtraction) -> DocumentExtraction: ...
+
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+        extraction_id: UUID,
+    ) -> DocumentExtraction | None: ...
+
+
+class DocumentExtractionOperationRepository(Protocol):
+    def reserve(
+        self, operation: DocumentExtractionOperation
+    ) -> DocumentExtractionOperation | None: ...
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        idempotency_key: str,
+    ) -> DocumentExtractionOperation | None: ...
+
+    def finalize_accepted(
+        self,
+        operation: DocumentExtractionOperation,
+        *,
+        extraction_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> DocumentExtractionOperation: ...
 
 
 class RequirementIssueRepository(Protocol):

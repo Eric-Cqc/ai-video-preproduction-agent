@@ -11,6 +11,13 @@ from services.api.app.domain.brief import (
     RequirementIssueStatus,
     RequirementIssueType,
 )
+from services.api.app.domain.document_extraction import (
+    EXTRACTED_DOCUMENT_SCHEMA_VERSION,
+    DocumentExtraction,
+    DocumentExtractionOperation,
+    DocumentExtractionOperationStatus,
+    DocumentExtractionStatus,
+)
 from services.api.app.domain.errors import (
     ApprovalBlocked,
     DomainError,
@@ -76,6 +83,11 @@ __all__ = [
     "BriefIngestionSourceType",
     "BriefIngestionStatus",
     "DomainError",
+    "DocumentExtraction",
+    "DocumentExtractionOperation",
+    "DocumentExtractionOperationStatus",
+    "DocumentExtractionStatus",
+    "EXTRACTED_DOCUMENT_SCHEMA_VERSION",
     "InvalidBriefMutation",
     "InvalidBriefTransition",
     "InvalidProjectMutation",

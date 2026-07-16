@@ -126,3 +126,25 @@ class SourceObjectUploadResponse(BaseModel):
     replayed: bool
     completed_at: datetime
     correlation_id: str
+
+
+class DocumentExtractionResponse(BaseModel):
+    id: UUID
+    source_asset_id: UUID
+    source_asset_version_id: UUID
+    parser_id: str
+    parser_version: str
+    status: str
+    extracted_document: dict[str, object]
+    character_count: int
+    warning_count: int
+    truncated: bool
+    created_at: datetime
+    schema_version: str
+
+
+class DocumentExtractionMutationResponse(BaseModel):
+    extraction: DocumentExtractionResponse
+    replayed: bool
+    completed_at: datetime
+    correlation_id: str
