@@ -3,6 +3,7 @@ from typing import Protocol, Self
 
 from services.api.app.application.repositories import (
     AuditEventRepository,
+    BriefCandidateReviewRepository,
     BriefExtractionAttemptRepository,
     BriefExtractionRunRepository,
     BriefIngestionRepository,
@@ -45,6 +46,7 @@ class UnitOfWork(Protocol):
     document_extraction_operations: DocumentExtractionOperationRepository
     brief_extraction_runs: BriefExtractionRunRepository
     brief_extraction_attempts: BriefExtractionAttemptRepository
+    brief_candidate_reviews: BriefCandidateReviewRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from services.api.app.application.repositories import (
     AuditEventRepository,
+    BriefCandidateReviewRepository,
     BriefExtractionAttemptRepository,
     BriefExtractionRunRepository,
     BriefIngestionRepository,
@@ -27,6 +28,7 @@ from services.api.app.application.repositories import (
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.repositories import (
     SqlAlchemyAuditEventRepository,
+    SqlAlchemyBriefCandidateReviewRepository,
     SqlAlchemyBriefExtractionAttemptRepository,
     SqlAlchemyBriefExtractionRunRepository,
     SqlAlchemyBriefIngestionRepository,
@@ -69,6 +71,7 @@ class SqlAlchemyUnitOfWork:
     document_extraction_operations: DocumentExtractionOperationRepository
     brief_extraction_runs: BriefExtractionRunRepository
     brief_extraction_attempts: BriefExtractionAttemptRepository
+    brief_candidate_reviews: BriefCandidateReviewRepository
     audit_events: AuditEventRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -102,6 +105,7 @@ class SqlAlchemyUnitOfWork:
         )
         self.brief_extraction_runs = SqlAlchemyBriefExtractionRunRepository(self.session)
         self.brief_extraction_attempts = SqlAlchemyBriefExtractionAttemptRepository(self.session)
+        self.brief_candidate_reviews = SqlAlchemyBriefCandidateReviewRepository(self.session)
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
         return self
 

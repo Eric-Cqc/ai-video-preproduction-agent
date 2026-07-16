@@ -5,6 +5,7 @@ from uuid import UUID
 from services.api.app.domain import (
     AuditEvent,
     Brief,
+    BriefCandidateReview,
     BriefExtractionAttempt,
     BriefExtractionRun,
     BriefIngestion,
@@ -334,6 +335,31 @@ class BriefExtractionAttemptRepository(Protocol):
         project_id: UUID,
         run_id: UUID,
     ) -> list[BriefExtractionAttempt]: ...
+
+
+class BriefCandidateReviewRepository(Protocol):
+    def reserve(self, review: BriefCandidateReview) -> BriefCandidateReview | None: ...
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, review_id: UUID
+    ) -> BriefCandidateReview | None: ...
+
+    def get_for_run(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> BriefCandidateReview | None: ...
+
+    def get_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        action: str,
+        idempotency_key: str,
+    ) -> BriefCandidateReview | None: ...
+
+    def finalize(
+        self, review: BriefCandidateReview, *, expected_version: int
+    ) -> BriefCandidateReview: ...
 
 
 class RequirementIssueRepository(Protocol):

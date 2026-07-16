@@ -10,6 +10,10 @@ from services.api.app.application.errors import ResourceConflict
 from services.api.app.domain import (
     AuditEvent,
     Brief,
+    BriefCandidateRejectReason,
+    BriefCandidateReview,
+    BriefCandidateReviewAction,
+    BriefCandidateReviewStatus,
     BriefExtractionAttempt,
     BriefExtractionAttemptStatus,
     BriefExtractionRun,
@@ -58,6 +62,7 @@ from services.api.app.domain import (
 )
 from services.api.app.infrastructure.models import (
     AuditEventRecord,
+    BriefCandidateReviewRecord,
     BriefExtractionAttemptRecord,
     BriefExtractionRunRecord,
     BriefIngestionRecord,
@@ -1483,6 +1488,122 @@ class SqlAlchemyBriefExtractionAttemptRepository:
         return [_brief_extraction_attempt(record) for record in records]
 
 
+class SqlAlchemyBriefCandidateReviewRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, review: BriefCandidateReview) -> BriefCandidateReview | None:
+        if review.status is not BriefCandidateReviewStatus.RESERVED:
+            raise ValueError("only reserved candidate reviews may be inserted")
+        record = self.session.scalar(
+            insert(BriefCandidateReviewRecord)
+            .values(
+                id=review.id,
+                organization_id=review.organization_id,
+                workspace_id=review.workspace_id,
+                project_id=review.project_id,
+                brief_extraction_run_id=review.brief_extraction_run_id,
+                action=review.action.value,
+                status=review.status.value,
+                idempotency_key=review.idempotency_key,
+                request_digest=review.request_digest,
+                candidate_digest=review.candidate_digest,
+                accepted_content_digest=None,
+                accepted_content_modified=None,
+                brief_id=None,
+                brief_version_id=None,
+                rejection_reason=None,
+                rejection_note=None,
+                submitted_by_actor_subject=review.submitted_by_actor_subject,
+                submitted_at=review.submitted_at,
+                completed_at=None,
+                correlation_id=review.correlation_id,
+                version=review.version,
+            )
+            .on_conflict_do_nothing()
+            .returning(BriefCandidateReviewRecord)
+        )
+        return _brief_candidate_review(record) if record is not None else None
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, review_id: UUID
+    ) -> BriefCandidateReview | None:
+        record = self.session.scalar(
+            select(BriefCandidateReviewRecord).where(
+                BriefCandidateReviewRecord.organization_id == organization_id,
+                BriefCandidateReviewRecord.workspace_id == workspace_id,
+                BriefCandidateReviewRecord.project_id == project_id,
+                BriefCandidateReviewRecord.id == review_id,
+            )
+        )
+        return _brief_candidate_review(record) if record is not None else None
+
+    def get_for_run(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> BriefCandidateReview | None:
+        record = self.session.scalar(
+            select(BriefCandidateReviewRecord).where(
+                BriefCandidateReviewRecord.organization_id == organization_id,
+                BriefCandidateReviewRecord.workspace_id == workspace_id,
+                BriefCandidateReviewRecord.project_id == project_id,
+                BriefCandidateReviewRecord.brief_extraction_run_id == run_id,
+            )
+        )
+        return _brief_candidate_review(record) if record is not None else None
+
+    def get_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        action: str,
+        idempotency_key: str,
+    ) -> BriefCandidateReview | None:
+        record = self.session.scalar(
+            select(BriefCandidateReviewRecord).where(
+                BriefCandidateReviewRecord.organization_id == organization_id,
+                BriefCandidateReviewRecord.workspace_id == workspace_id,
+                BriefCandidateReviewRecord.project_id == project_id,
+                BriefCandidateReviewRecord.action == action,
+                BriefCandidateReviewRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _brief_candidate_review(record) if record is not None else None
+
+    def finalize(
+        self, review: BriefCandidateReview, *, expected_version: int
+    ) -> BriefCandidateReview:
+        record = self.session.scalar(
+            update(BriefCandidateReviewRecord)
+            .where(
+                BriefCandidateReviewRecord.organization_id == review.organization_id,
+                BriefCandidateReviewRecord.workspace_id == review.workspace_id,
+                BriefCandidateReviewRecord.project_id == review.project_id,
+                BriefCandidateReviewRecord.id == review.id,
+                BriefCandidateReviewRecord.status == BriefCandidateReviewStatus.RESERVED.value,
+                BriefCandidateReviewRecord.version == expected_version,
+            )
+            .values(
+                status=review.status.value,
+                accepted_content_digest=review.accepted_content_digest,
+                accepted_content_modified=review.accepted_content_modified,
+                brief_id=review.brief_id,
+                brief_version_id=review.brief_version_id,
+                rejection_reason=(
+                    review.rejection_reason.value if review.rejection_reason else None
+                ),
+                rejection_note=review.rejection_note,
+                completed_at=review.completed_at,
+                version=review.version,
+            )
+            .returning(BriefCandidateReviewRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("candidate review changed before finalization")
+        return _brief_candidate_review(record)
+
+
 class SqlAlchemyAuditEventRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1861,6 +1982,36 @@ def _brief_extraction_attempt(
         output_character_count=record.output_character_count,
         started_at=record.started_at,
         completed_at=record.completed_at,
+    )
+
+
+def _brief_candidate_review(record: BriefCandidateReviewRecord) -> BriefCandidateReview:
+    return BriefCandidateReview(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        brief_extraction_run_id=record.brief_extraction_run_id,
+        action=BriefCandidateReviewAction(record.action),
+        status=BriefCandidateReviewStatus(record.status),
+        idempotency_key=record.idempotency_key,
+        request_digest=record.request_digest,
+        candidate_digest=record.candidate_digest,
+        accepted_content_digest=record.accepted_content_digest,
+        accepted_content_modified=record.accepted_content_modified,
+        brief_id=record.brief_id,
+        brief_version_id=record.brief_version_id,
+        rejection_reason=(
+            BriefCandidateRejectReason(record.rejection_reason)
+            if record.rejection_reason is not None
+            else None
+        ),
+        rejection_note=record.rejection_note,
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
+        version=record.version,
     )
 
 

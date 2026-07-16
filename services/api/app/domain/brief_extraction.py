@@ -18,6 +18,26 @@ class BriefExtractionAttemptStatus(StrEnum):
     PROVIDER_ERROR = "provider_error"
 
 
+class BriefCandidateReviewAction(StrEnum):
+    ACCEPT = "accept"
+    REJECT = "reject"
+
+
+class BriefCandidateReviewStatus(StrEnum):
+    RESERVED = "reserved"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class BriefCandidateRejectReason(StrEnum):
+    INACCURATE = "inaccurate"
+    INCOMPLETE = "incomplete"
+    UNSAFE = "unsafe"
+    IRRELEVANT = "irrelevant"
+    DUPLICATE = "duplicate"
+    OTHER = "other"
+
+
 @dataclass(frozen=True, slots=True)
 class BriefExtractionRun:
     id: UUID
@@ -53,3 +73,28 @@ class BriefExtractionAttempt:
     output_character_count: int
     started_at: datetime
     completed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class BriefCandidateReview:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    brief_extraction_run_id: UUID
+    action: BriefCandidateReviewAction
+    status: BriefCandidateReviewStatus
+    idempotency_key: str
+    request_digest: str
+    candidate_digest: str
+    accepted_content_digest: str | None
+    accepted_content_modified: bool | None
+    brief_id: UUID | None
+    brief_version_id: UUID | None
+    rejection_reason: BriefCandidateRejectReason | None
+    rejection_note: str | None
+    submitted_by_actor_subject: str
+    submitted_at: datetime
+    completed_at: datetime | None
+    correlation_id: str
+    version: int

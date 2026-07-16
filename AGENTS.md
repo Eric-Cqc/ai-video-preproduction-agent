@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-处于 foundation bootstrap 第九阶段（offline AI Brief extraction safe foundation）。允许：在 verified immutable DocumentExtraction 上通过 model-neutral port 和 deterministic fake provider 离线验证 versioned instructions、严格 Structured Brief Schema output validation、immutable Run/Attempt 与 `human_review_required` candidate 边界。候选绝不自动创建或修改 BriefVersion。禁止：真实 AI/模型调用、Provider SDK/凭据/网络、tool use、URL 抓取、自动接受候选、OCR、动态 parser/plugin、Job/queue、产品 UI、云对象存储或其他云资源。阶段决定见 `docs/adr/ADR-017` 至 `ADR-043`。
+处于 foundation bootstrap 第十阶段（candidate human review safe foundation）。允许：对第九阶段 `human_review_required` candidate 做 tenant-scoped 读取，以及由授权人显式、幂等、可审计地 accept/reject；accept 只能通过既有 CAS 创建新的 draft BriefVersion，reject 不创建 Brief 内容。候选绝不自动接受或原地修改，approved predecessor 不可变。禁止：真实 AI/模型调用、Provider SDK/凭据/网络、tool use、URL 抓取、自动接受候选、OCR、动态 parser/plugin、Job/queue、产品 UI、云对象存储或其他云资源。阶段决定见 `docs/adr/ADR-017` 至 `ADR-047`。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 
