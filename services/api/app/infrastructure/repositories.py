@@ -39,6 +39,11 @@ from services.api.app.domain import (
     SourceAssetSourceType,
     SourceAssetStatus,
     SourceAssetVersion,
+    SourceObject,
+    SourceObjectCleanupRequirement,
+    SourceObjectState,
+    SourceObjectUpload,
+    SourceObjectUploadStatus,
     VersionConflict,
     Workspace,
     WorkspaceStatus,
@@ -56,6 +61,9 @@ from services.api.app.infrastructure.models import (
     SourceAssetOperationRecord,
     SourceAssetRecord,
     SourceAssetVersionRecord,
+    SourceObjectCleanupRequirementRecord,
+    SourceObjectRecord,
+    SourceObjectUploadRecord,
     WorkspaceRecord,
 )
 
@@ -950,6 +958,161 @@ class SqlAlchemySourceAssetOperationRepository:
         return _source_asset_operation(record)
 
 
+class SqlAlchemySourceObjectRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, source_object: SourceObject) -> SourceObject:
+        record = SourceObjectRecord(
+            id=source_object.id,
+            organization_id=source_object.organization_id,
+            workspace_id=source_object.workspace_id,
+            project_id=source_object.project_id,
+            source_asset_id=source_object.source_asset_id,
+            source_asset_version_id=source_object.source_asset_version_id,
+            storage_adapter=source_object.storage_adapter,
+            storage_key=source_object.storage_key,
+            state=source_object.state.value,
+            observed_byte_size=source_object.observed_byte_size,
+            observed_checksum_algorithm=source_object.observed_checksum_algorithm,
+            observed_checksum_value=source_object.observed_checksum_value,
+            created_by_actor_subject=source_object.created_by_actor_subject,
+            created_at=source_object.created_at,
+            version=source_object.version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(self.session, "source_object_conflict", "source object already exists")
+        return _source_object(record)
+
+    def get_for_version(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+    ) -> SourceObject | None:
+        record = self.session.scalar(
+            select(SourceObjectRecord).where(
+                SourceObjectRecord.organization_id == organization_id,
+                SourceObjectRecord.workspace_id == workspace_id,
+                SourceObjectRecord.project_id == project_id,
+                SourceObjectRecord.source_asset_id == source_asset_id,
+                SourceObjectRecord.source_asset_version_id == source_asset_version_id,
+            )
+        )
+        return _source_object(record) if record is not None else None
+
+
+class SqlAlchemySourceObjectUploadRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, upload: SourceObjectUpload) -> SourceObjectUpload | None:
+        if upload.status is not SourceObjectUploadStatus.RESERVED:
+            raise ValueError("only reserved uploads may be inserted")
+        record = self.session.scalar(
+            insert(SourceObjectUploadRecord)
+            .values(
+                id=upload.id,
+                organization_id=upload.organization_id,
+                workspace_id=upload.workspace_id,
+                project_id=upload.project_id,
+                source_asset_id=upload.source_asset_id,
+                source_asset_version_id=upload.source_asset_version_id,
+                source_object_id=None,
+                operation=upload.operation,
+                idempotency_key=upload.idempotency_key,
+                request_digest=upload.request_digest,
+                status=upload.status.value,
+                submitted_by_actor_subject=upload.submitted_by_actor_subject,
+                submitted_at=upload.submitted_at,
+                completed_at=None,
+                correlation_id=upload.correlation_id,
+                version=upload.version,
+            )
+            .on_conflict_do_nothing(constraint="uq_source_object_uploads_idempotency")
+            .returning(SourceObjectUploadRecord)
+        )
+        return _source_object_upload(record) if record is not None else None
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: str,
+        idempotency_key: str,
+    ) -> SourceObjectUpload | None:
+        record = self.session.scalar(
+            select(SourceObjectUploadRecord).where(
+                SourceObjectUploadRecord.organization_id == organization_id,
+                SourceObjectUploadRecord.workspace_id == workspace_id,
+                SourceObjectUploadRecord.project_id == project_id,
+                SourceObjectUploadRecord.operation == operation,
+                SourceObjectUploadRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _source_object_upload(record) if record is not None else None
+
+    def finalize_accepted(
+        self,
+        upload: SourceObjectUpload,
+        *,
+        source_object_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> SourceObjectUpload:
+        record = self.session.scalar(
+            update(SourceObjectUploadRecord)
+            .where(
+                SourceObjectUploadRecord.organization_id == upload.organization_id,
+                SourceObjectUploadRecord.workspace_id == upload.workspace_id,
+                SourceObjectUploadRecord.project_id == upload.project_id,
+                SourceObjectUploadRecord.id == upload.id,
+                SourceObjectUploadRecord.source_asset_id == upload.source_asset_id,
+                SourceObjectUploadRecord.source_asset_version_id == upload.source_asset_version_id,
+                SourceObjectUploadRecord.operation == upload.operation,
+                SourceObjectUploadRecord.idempotency_key == upload.idempotency_key,
+                SourceObjectUploadRecord.request_digest == upload.request_digest,
+                SourceObjectUploadRecord.status == SourceObjectUploadStatus.RESERVED.value,
+                SourceObjectUploadRecord.version == expected_version,
+            )
+            .values(
+                status=SourceObjectUploadStatus.ACCEPTED.value,
+                source_object_id=source_object_id,
+                completed_at=completed_at,
+                version=expected_version + 1,
+            )
+            .returning(SourceObjectUploadRecord)
+        )
+        if record is None:
+            raise VersionConflict("source object upload changed before acceptance")
+        return _source_object_upload(record)
+
+
+class SqlAlchemySourceObjectCleanupRequirementRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, requirement: SourceObjectCleanupRequirement) -> SourceObjectCleanupRequirement:
+        record = SourceObjectCleanupRequirementRecord(
+            id=requirement.id,
+            organization_id=requirement.organization_id,
+            workspace_id=requirement.workspace_id,
+            project_id=requirement.project_id,
+            storage_adapter=requirement.storage_adapter,
+            storage_key=requirement.storage_key,
+            reason_code=requirement.reason_code,
+            created_at=requirement.created_at,
+        )
+        self.session.add(record)
+        _flush_or_conflict(
+            self.session, "cleanup_requirement_conflict", "cleanup requirement is invalid"
+        )
+        return requirement
+
+
 class SqlAlchemyRequirementIssueRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1325,6 +1488,47 @@ def _source_asset_operation(record: SourceAssetOperationRecord) -> SourceAssetOp
         idempotency_key=record.idempotency_key,
         request_digest=record.request_digest,
         status=SourceAssetOperationStatus(record.status),
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
+        version=record.version,
+    )
+
+
+def _source_object(record: SourceObjectRecord) -> SourceObject:
+    return SourceObject(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        storage_adapter=record.storage_adapter,
+        storage_key=record.storage_key,
+        state=SourceObjectState(record.state),
+        observed_byte_size=record.observed_byte_size,
+        observed_checksum_algorithm=record.observed_checksum_algorithm,
+        observed_checksum_value=record.observed_checksum_value,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        version=record.version,
+    )
+
+
+def _source_object_upload(record: SourceObjectUploadRecord) -> SourceObjectUpload:
+    return SourceObjectUpload(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        source_object_id=record.source_object_id,
+        operation=record.operation,
+        idempotency_key=record.idempotency_key,
+        request_digest=record.request_digest,
+        status=SourceObjectUploadStatus(record.status),
         submitted_by_actor_subject=record.submitted_by_actor_subject,
         submitted_at=record.submitted_at,
         completed_at=record.completed_at,

@@ -15,6 +15,9 @@ from services.api.app.application.repositories import (
     SourceAssetOperationRepository,
     SourceAssetRepository,
     SourceAssetVersionRepository,
+    SourceObjectCleanupRequirementRepository,
+    SourceObjectRepository,
+    SourceObjectUploadRepository,
     WorkspaceRepository,
 )
 from services.api.app.infrastructure.database import SessionFactory
@@ -31,6 +34,9 @@ from services.api.app.infrastructure.repositories import (
     SqlAlchemySourceAssetOperationRepository,
     SqlAlchemySourceAssetRepository,
     SqlAlchemySourceAssetVersionRepository,
+    SqlAlchemySourceObjectCleanupRequirementRepository,
+    SqlAlchemySourceObjectRepository,
+    SqlAlchemySourceObjectUploadRepository,
     SqlAlchemyWorkspaceRepository,
 )
 
@@ -48,6 +54,9 @@ class SqlAlchemyUnitOfWork:
     source_assets: SourceAssetRepository
     source_asset_versions: SourceAssetVersionRepository
     source_asset_operations: SourceAssetOperationRepository
+    source_objects: SourceObjectRepository
+    source_object_uploads: SourceObjectUploadRepository
+    source_object_cleanup_requirements: SourceObjectCleanupRequirementRepository
     audit_events: AuditEventRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -70,6 +79,11 @@ class SqlAlchemyUnitOfWork:
         self.source_assets = SqlAlchemySourceAssetRepository(self.session)
         self.source_asset_versions = SqlAlchemySourceAssetVersionRepository(self.session)
         self.source_asset_operations = SqlAlchemySourceAssetOperationRepository(self.session)
+        self.source_objects = SqlAlchemySourceObjectRepository(self.session)
+        self.source_object_uploads = SqlAlchemySourceObjectUploadRepository(self.session)
+        self.source_object_cleanup_requirements = (
+            SqlAlchemySourceObjectCleanupRequirementRepository(self.session)
+        )
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
         return self
 

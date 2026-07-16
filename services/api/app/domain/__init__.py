@@ -53,6 +53,13 @@ from services.api.app.domain.source_asset import (
     SourceAssetStatus,
     SourceAssetVersion,
 )
+from services.api.app.domain.source_object import (
+    SourceObject,
+    SourceObjectCleanupRequirement,
+    SourceObjectState,
+    SourceObjectUpload,
+    SourceObjectUploadStatus,
+)
 
 __all__ = [
     "ApprovalBlocked",
@@ -95,6 +102,11 @@ __all__ = [
     "SourceAssetSourceType",
     "SourceAssetStatus",
     "SourceAssetVersion",
+    "SourceObject",
+    "SourceObjectCleanupRequirement",
+    "SourceObjectState",
+    "SourceObjectUpload",
+    "SourceObjectUploadStatus",
     "VersionConflict",
     "Workspace",
     "WorkspaceStatus",

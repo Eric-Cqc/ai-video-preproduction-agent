@@ -14,6 +14,9 @@ from services.api.app.application.repositories import (
     SourceAssetOperationRepository,
     SourceAssetRepository,
     SourceAssetVersionRepository,
+    SourceObjectCleanupRequirementRepository,
+    SourceObjectRepository,
+    SourceObjectUploadRepository,
     WorkspaceRepository,
 )
 
@@ -31,6 +34,9 @@ class UnitOfWork(Protocol):
     source_assets: SourceAssetRepository
     source_asset_versions: SourceAssetVersionRepository
     source_asset_operations: SourceAssetOperationRepository
+    source_objects: SourceObjectRepository
+    source_object_uploads: SourceObjectUploadRepository
+    source_object_cleanup_requirements: SourceObjectCleanupRequirementRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...

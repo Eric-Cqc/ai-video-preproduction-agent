@@ -9,6 +9,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .cache/
+.local/
 .env
 .env.local
 !.env.example

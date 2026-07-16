@@ -18,6 +18,9 @@ from services.api.app.domain import (
     SourceAssetOperation,
     SourceAssetOperationType,
     SourceAssetVersion,
+    SourceObject,
+    SourceObjectCleanupRequirement,
+    SourceObjectUpload,
     Workspace,
 )
 
@@ -225,6 +228,47 @@ class SourceAssetOperationRepository(Protocol):
         completed_at: datetime,
         expected_version: int,
     ) -> SourceAssetOperation: ...
+
+
+class SourceObjectRepository(Protocol):
+    def add(self, source_object: SourceObject) -> SourceObject: ...
+
+    def get_for_version(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+    ) -> SourceObject | None: ...
+
+
+class SourceObjectUploadRepository(Protocol):
+    def reserve(self, upload: SourceObjectUpload) -> SourceObjectUpload | None: ...
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: str,
+        idempotency_key: str,
+    ) -> SourceObjectUpload | None: ...
+
+    def finalize_accepted(
+        self,
+        upload: SourceObjectUpload,
+        *,
+        source_object_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> SourceObjectUpload: ...
+
+
+class SourceObjectCleanupRequirementRepository(Protocol):
+    def add(
+        self, requirement: SourceObjectCleanupRequirement
+    ) -> SourceObjectCleanupRequirement: ...
 
 
 class RequirementIssueRepository(Protocol):

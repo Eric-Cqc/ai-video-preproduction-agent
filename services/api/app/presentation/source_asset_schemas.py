@@ -110,3 +110,19 @@ class SourceAssetListResponse(BaseModel):
 
 class SourceAssetVersionListResponse(BaseModel):
     items: list[SourceAssetVersionResponse]
+
+
+class SourceObjectResponse(BaseModel):
+    id: UUID
+    source_asset_id: UUID
+    source_asset_version_id: UUID
+    state: str
+    observed_byte_size: int
+    created_at: datetime
+
+
+class SourceObjectUploadResponse(BaseModel):
+    source_object: SourceObjectResponse
+    replayed: bool
+    completed_at: datetime
+    correlation_id: str

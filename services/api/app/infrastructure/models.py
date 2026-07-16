@@ -878,6 +878,191 @@ class SourceAssetOperationRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
+class SourceObjectRecord(Base):
+    __tablename__ = "source_objects"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_source_objects_tenant_project_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "source_asset_id",
+            "source_asset_version_id",
+            name="uq_source_objects_source_version",
+        ),
+        UniqueConstraint("storage_adapter", "storage_key", name="uq_source_objects_storage_key"),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_source_objects_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("state = 'available'", name="ck_source_object_state"),
+        CheckConstraint(
+            "observed_byte_size > 0 AND observed_byte_size <= 104857600",
+            name="ck_source_object_byte_size",
+        ),
+        CheckConstraint(
+            "observed_checksum_algorithm = 'sha256'", name="ck_source_object_checksum_algorithm"
+        ),
+        CheckConstraint(
+            "observed_checksum_value ~ '^[0-9a-f]{64}$'", name="ck_source_object_checksum_value"
+        ),
+        CheckConstraint("version >= 1", name="ck_source_object_version"),
+        Index(
+            "ix_source_objects_tenant_version",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "source_asset_id",
+            "source_asset_version_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storage_adapter: Mapped[str] = mapped_column(String(40), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    observed_byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_checksum_algorithm: Mapped[str] = mapped_column(String(20), nullable=False)
+    observed_checksum_value: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class SourceObjectUploadRecord(Base):
+    __tablename__ = "source_object_uploads"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_source_object_uploads_idempotency",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_source_object_uploads_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_object_id"],
+            [
+                "source_objects.organization_id",
+                "source_objects.workspace_id",
+                "source_objects.project_id",
+                "source_objects.id",
+            ],
+            name="fk_source_object_uploads_object_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation = 'upload_source_object'", name="ck_source_object_upload_operation"
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted')", name="ck_source_object_upload_status"
+        ),
+        CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_source_object_upload_digest"),
+        CheckConstraint("version >= 1", name="ck_source_object_upload_version"),
+        CheckConstraint(
+            "(status = 'reserved' AND source_object_id IS NULL "
+            "AND completed_at IS NULL) OR (status = 'accepted' "
+            "AND source_object_id IS NOT NULL AND completed_at IS NOT NULL)",
+            name="ck_source_object_upload_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_object_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class SourceObjectCleanupRequirementRecord(Base):
+    __tablename__ = "source_object_cleanup_requirements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_source_object_cleanup_project_tenant",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "storage_adapter", "storage_key", name="uq_source_object_cleanup_storage_key"
+        ),
+        CheckConstraint(
+            "reason_code IN ('database_failure', 'replay_cleanup_failure', "
+            "'staging_cleanup_failure')",
+            name="ck_source_object_cleanup_reason",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storage_adapter: Mapped[str] = mapped_column(String(40), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -895,7 +1080,7 @@ class AuditEventRecord(Base):
             "'brief.issue_resolved', 'brief.issue_dismissed', 'brief.ingestion_accepted', "
             "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
-            "'source_asset.archived')",
+            "'source_asset.archived', 'source_object.uploaded')",
             name="ck_audit_action",
         ),
         Index(

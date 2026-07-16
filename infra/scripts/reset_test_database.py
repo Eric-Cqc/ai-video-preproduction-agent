@@ -24,6 +24,7 @@ def main() -> int:
             connection.execute(
                 text(
                     "TRUNCATE TABLE brief_ingestion_source_assets, source_asset_operations, "
+                    "source_object_uploads, source_object_cleanup_requirements, source_objects, "
                     "source_asset_versions, source_assets, brief_ingestions, requirement_issues, "
                     "brief_versions, briefs, audit_events, projects, memberships, workspaces, "
                     "organizations CASCADE"
