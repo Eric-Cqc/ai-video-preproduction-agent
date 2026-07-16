@@ -3,6 +3,7 @@ from typing import Protocol
 from uuid import UUID
 
 from services.api.app.domain import (
+    ArtifactRevisionLink,
     AuditEvent,
     Brief,
     BriefCandidateReview,
@@ -17,13 +18,21 @@ from services.api.app.domain import (
     CreativeConceptSelection,
     CreativeGenerationOperation,
     CreativeGenerationOperationType,
+    DeliveryExportFile,
+    DeliveryOperation,
+    DeliveryOperationType,
+    DeliveryPackage,
+    DeliveryPackageVersion,
     DocumentExtraction,
     DocumentExtractionOperation,
     Membership,
     Organization,
+    PlanningReview,
+    PlanningRevisionRequest,
     Project,
     RequirementIssue,
     RequirementIssueStatus,
+    ReviewArtifactType,
     ScriptRun,
     ScriptVersion,
     ShotPlanRun,
@@ -492,6 +501,92 @@ class VisualPlanningOperationRepository(Protocol):
     def finalize_accepted(
         self, value: VisualPlanningOperation, *, expected_version: int
     ) -> VisualPlanningOperation: ...
+
+
+class PlanningReviewRepository(Protocol):
+    def add(self, value: PlanningReview) -> PlanningReview: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, review_id: UUID
+    ) -> PlanningReview | None: ...
+    def list(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID
+    ) -> list[PlanningReview]: ...
+    def next_round(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        artifact_type: ReviewArtifactType,
+        script_version_id: UUID | None,
+        storyboard_version_id: UUID | None,
+        shot_plan_version_id: UUID | None,
+    ) -> int: ...
+
+
+class PlanningRevisionRequestRepository(Protocol):
+    def add(self, value: PlanningRevisionRequest) -> PlanningRevisionRequest: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, request_id: UUID
+    ) -> PlanningRevisionRequest | None: ...
+    def update_completed(
+        self, value: PlanningRevisionRequest, *, expected_version: int
+    ) -> PlanningRevisionRequest: ...
+    def update_cancelled(
+        self, value: PlanningRevisionRequest, *, expected_version: int
+    ) -> PlanningRevisionRequest: ...
+
+
+class ArtifactRevisionLinkRepository(Protocol):
+    def add(self, value: ArtifactRevisionLink) -> ArtifactRevisionLink: ...
+    def get_for_predecessor(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, predecessor_id: UUID
+    ) -> ArtifactRevisionLink | None: ...
+
+
+class DeliveryPackageRepository(Protocol):
+    def add(self, value: DeliveryPackage) -> DeliveryPackage: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, package_id: UUID
+    ) -> DeliveryPackage | None: ...
+    def update_current(
+        self, value: DeliveryPackage, *, expected_version: int
+    ) -> DeliveryPackage: ...
+
+
+class DeliveryPackageVersionRepository(Protocol):
+    def add(self, value: DeliveryPackageVersion) -> DeliveryPackageVersion: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, version_id: UUID
+    ) -> DeliveryPackageVersion | None: ...
+
+
+class DeliveryExportFileRepository(Protocol):
+    def add(self, value: DeliveryExportFile) -> DeliveryExportFile: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, export_id: UUID
+    ) -> DeliveryExportFile | None: ...
+    def list_for_package_version(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        package_version_id: UUID,
+    ) -> list[DeliveryExportFile]: ...
+
+
+class DeliveryOperationRepository(Protocol):
+    def reserve(self, value: DeliveryOperation) -> DeliveryOperation | None: ...
+    def get_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: DeliveryOperationType,
+        idempotency_key: str,
+    ) -> DeliveryOperation | None: ...
+    def finalize_accepted(
+        self, value: DeliveryOperation, *, expected_version: int
+    ) -> DeliveryOperation: ...
 
 
 class RequirementIssueRepository(Protocol):

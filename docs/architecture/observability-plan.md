@@ -14,6 +14,14 @@ Storyboard and Shot Plan audit actions (`storyboard.generated`, `shot_plan.gener
 are bounded to IDs, schema/count/duration and provider/template identifiers. Replay
 does not append an event; validation/provider failures do not write a success event.
 
+Stage 13 audit actions (`planning_review.submitted`,
+`planning_revision.requested`, `planning_revision.completed`,
+`delivery_package.created`, and `delivery_package.exported`) contain bounded
+artifact/package/export IDs, outcome, version/count and format metadata only.
+They never contain review text, requested-change payloads, export bytes, storage
+keys, idempotency keys, request digests or provider output. Replays do not add
+events, and storage/database compensation failures do not emit success events.
+
 ## 冻结决定
 
 版本与审计必须能关联关键 mutation；日志不替代 AuditEvent，AuditEvent 不替代 canonical domain state。

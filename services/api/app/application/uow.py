@@ -2,6 +2,7 @@ from types import TracebackType
 from typing import Protocol, Self
 
 from services.api.app.application.repositories import (
+    ArtifactRevisionLinkRepository,
     AuditEventRepository,
     BriefCandidateReviewRepository,
     BriefExtractionAttemptRepository,
@@ -14,10 +15,16 @@ from services.api.app.application.repositories import (
     CreativeConceptRunRepository,
     CreativeConceptSelectionRepository,
     CreativeGenerationOperationRepository,
+    DeliveryExportFileRepository,
+    DeliveryOperationRepository,
+    DeliveryPackageRepository,
+    DeliveryPackageVersionRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
+    PlanningReviewRepository,
+    PlanningRevisionRequestRepository,
     ProjectRepository,
     RequirementIssueRepository,
     ScriptRunRepository,
@@ -70,6 +77,13 @@ class UnitOfWork(Protocol):
     shot_plan_versions: ShotPlanVersionRepository
     visual_planning_operations: VisualPlanningOperationRepository
     audit_events: AuditEventRepository
+    planning_reviews: PlanningReviewRepository
+    planning_revision_requests: PlanningRevisionRequestRepository
+    artifact_revision_links: ArtifactRevisionLinkRepository
+    delivery_packages: DeliveryPackageRepository
+    delivery_package_versions: DeliveryPackageVersionRepository
+    delivery_export_files: DeliveryExportFileRepository
+    delivery_operations: DeliveryOperationRepository
 
     def __enter__(self) -> Self: ...
 

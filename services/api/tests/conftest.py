@@ -61,7 +61,10 @@ def _truncate(engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(
             text(
-                "TRUNCATE TABLE visual_planning_operations, shot_plan_versions, "
+                "TRUNCATE TABLE delivery_operations, delivery_export_files, "
+                "delivery_package_versions, delivery_packages, "
+                "planning_artifact_revision_links, planning_revision_requests, planning_reviews, "
+                "visual_planning_operations, shot_plan_versions, "
                 "shot_plan_runs, storyboard_versions, storyboard_runs, "
                 "creative_generation_operations, script_versions, script_runs, "
                 "creative_concept_selections, creative_concept_candidates, creative_concept_runs, "

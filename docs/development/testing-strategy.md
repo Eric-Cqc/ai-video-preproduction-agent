@@ -19,6 +19,15 @@ scene/shot identity/order/continuity and Python/TypeScript contract parity. Fake
 provider modes are deterministic and offline; no test invokes a network or media
 generator.
 
+Stage 13 review/revision/delivery tests use real PostgreSQL to cover exact
+approved-bundle gating, review/revision replay and changed-digest conflicts,
+opaque cross-tenant 404s, mutation/read roles, immutable predecessor snapshots,
+successor lineage links, schema/semantic/refusal/timeout/provider-error rollback,
+same-key reservation races, winner rollback and loser takeover, package
+manifest digest pinning, deterministic JSON/CSV/ZIP bytes, storage compensation,
+and delivery-export idempotency. Migration tests cover empty base-to-head,
+downgrade/re-upgrade and metadata drift.
+
 ## 根命令
 
 - `make test-domain`：无数据库领域规则。
