@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-video-preproduction-agent.local/contracts/creative-concept-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "title",
+    "one_line_idea",
+    "strategic_rationale",
+    "target_audience_insight",
+    "emotional_tone",
+    "visual_world",
+    "narrative_arc",
+    "key_message",
+    "channel_fit",
+    "risks",
+    "assumptions"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "one_line_idea": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "strategic_rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "target_audience_insight": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "emotional_tone": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "visual_world": { "type": "string", "minLength": 1, "maxLength": 1500 },
+    "narrative_arc": { "type": "string", "minLength": 1, "maxLength": 1500 },
+    "key_message": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "channel_fit": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+    },
+    "risks": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "assumptions": {
+      "type": "array",
+      "maxItems": 12,
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    }
+  }
+}

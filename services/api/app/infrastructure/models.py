@@ -1467,6 +1467,414 @@ class BriefCandidateReviewRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 
+class CreativeConceptRunRecord(Base):
+    __tablename__ = "creative_concept_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "workspace_id", "project_id", "id", name="uq_concept_runs_tenant_id"
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id", "brief_version_id"],
+            [
+                "brief_versions.organization_id",
+                "brief_versions.workspace_id",
+                "brief_versions.project_id",
+                "brief_versions.brief_id",
+                "brief_versions.id",
+            ],
+            name="fk_concept_runs_brief_version",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status IN ('completed', 'failed')", name="ck_concept_run_status"),
+        CheckConstraint(
+            "failure_category IN ('refusal', 'timeout', 'provider_error', "
+            "'malformed_output', 'schema_invalid') OR failure_category IS NULL",
+            name="ck_concept_run_failure",
+        ),
+        CheckConstraint("candidate_count = 3", name="ck_concept_run_candidate_count"),
+        CheckConstraint("brief_content_digest ~ '^[0-9a-f]{64}$'", name="ck_concept_run_digest"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_template_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class CreativeConceptCandidateRecord(Base):
+    __tablename__ = "creative_concept_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_concept_candidates_tenant_plain_id",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "concept_run_id",
+            "id",
+            name="uq_concept_candidates_tenant_id",
+        ),
+        UniqueConstraint("concept_run_id", "candidate_index", name="uq_concept_candidates_index"),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "concept_run_id"],
+            [
+                "creative_concept_runs.organization_id",
+                "creative_concept_runs.workspace_id",
+                "creative_concept_runs.project_id",
+                "creative_concept_runs.id",
+            ],
+            name="fk_concept_candidates_run",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("candidate_index BETWEEN 1 AND 3", name="ck_concept_candidate_index"),
+        CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_concept_candidate_digest"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    candidate_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CreativeConceptSelectionRecord(Base):
+    __tablename__ = "creative_concept_selections"
+    __table_args__ = (
+        UniqueConstraint("concept_run_id", name="uq_concept_selection_run"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "id",
+            name="uq_concept_selection_lineage",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_concept_selection_tenant_id",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "concept_run_id",
+                "concept_candidate_id",
+            ],
+            [
+                "creative_concept_candidates.organization_id",
+                "creative_concept_candidates.workspace_id",
+                "creative_concept_candidates.project_id",
+                "creative_concept_candidates.concept_run_id",
+                "creative_concept_candidates.id",
+            ],
+            name="fk_concept_selection_candidate",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("version >= 1", name="ck_concept_selection_version"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    selected_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class ScriptRunRecord(Base):
+    __tablename__ = "script_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "workspace_id", "project_id", "id", name="uq_script_runs_tenant_id"
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            "brief_id",
+            "brief_version_id",
+            "concept_run_id",
+            "concept_candidate_id",
+            "concept_selection_id",
+            name="uq_script_runs_lineage",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id", "brief_version_id"],
+            [
+                "brief_versions.organization_id",
+                "brief_versions.workspace_id",
+                "brief_versions.project_id",
+                "brief_versions.brief_id",
+                "brief_versions.id",
+            ],
+            name="fk_script_runs_brief_version",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "concept_run_id",
+                "concept_candidate_id",
+            ],
+            [
+                "creative_concept_candidates.organization_id",
+                "creative_concept_candidates.workspace_id",
+                "creative_concept_candidates.project_id",
+                "creative_concept_candidates.concept_run_id",
+                "creative_concept_candidates.id",
+            ],
+            name="fk_script_runs_candidate",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+            ],
+            [
+                "creative_concept_selections.organization_id",
+                "creative_concept_selections.workspace_id",
+                "creative_concept_selections.project_id",
+                "creative_concept_selections.concept_run_id",
+                "creative_concept_selections.concept_candidate_id",
+                "creative_concept_selections.id",
+            ],
+            name="fk_script_runs_selection",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("status IN ('completed', 'failed')", name="ck_script_run_status"),
+        CheckConstraint(
+            "brief_content_digest ~ '^[0-9a-f]{64}$' AND concept_content_digest ~ '^[0-9a-f]{64}$'",
+            name="ck_script_run_digests",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    concept_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    instruction_template_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class ScriptVersionRecord(Base):
+    __tablename__ = "script_versions"
+    __table_args__ = (
+        UniqueConstraint("script_run_id", "version_number", name="uq_script_versions_number"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_script_versions_tenant_id",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "script_run_id",
+                "brief_id",
+                "brief_version_id",
+                "concept_run_id",
+                "concept_candidate_id",
+                "concept_selection_id",
+            ],
+            [
+                "script_runs.organization_id",
+                "script_runs.workspace_id",
+                "script_runs.project_id",
+                "script_runs.id",
+                "script_runs.brief_id",
+                "script_runs.brief_version_id",
+                "script_runs.concept_run_id",
+                "script_runs.concept_candidate_id",
+                "script_runs.concept_selection_id",
+            ],
+            name="fk_script_versions_run",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("version_number = 1", name="ck_script_version_number"),
+        CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_script_version_digest"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_candidate_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    concept_selection_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CreativeGenerationOperationRecord(Base):
+    __tablename__ = "creative_generation_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_creative_generation_operation_key",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_creative_operation_project_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_concept_run_id"],
+            [
+                "creative_concept_runs.organization_id",
+                "creative_concept_runs.workspace_id",
+                "creative_concept_runs.project_id",
+                "creative_concept_runs.id",
+            ],
+            name="fk_creative_operation_concept_run",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_candidate_id"],
+            [
+                "creative_concept_candidates.organization_id",
+                "creative_concept_candidates.workspace_id",
+                "creative_concept_candidates.project_id",
+                "creative_concept_candidates.id",
+            ],
+            name="fk_creative_operation_candidate",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_selection_id"],
+            [
+                "creative_concept_selections.organization_id",
+                "creative_concept_selections.workspace_id",
+                "creative_concept_selections.project_id",
+                "creative_concept_selections.id",
+            ],
+            name="fk_creative_operation_selection",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_script_run_id"],
+            [
+                "script_runs.organization_id",
+                "script_runs.workspace_id",
+                "script_runs.project_id",
+                "script_runs.id",
+            ],
+            name="fk_creative_operation_script_run",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_script_version_id"],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+            ],
+            name="fk_creative_operation_script_version",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation IN ('generate_creative_concepts', 'select_creative_concept', "
+            "'generate_script')",
+            name="ck_creative_operation_type",
+        ),
+        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_creative_operation_status"),
+        CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_creative_operation_digest"),
+        CheckConstraint(
+            "(status='reserved' AND completed_at IS NULL AND outcome_concept_run_id IS NULL "
+            "AND outcome_candidate_id IS NULL AND outcome_selection_id IS NULL "
+            "AND outcome_script_run_id IS NULL AND outcome_script_version_id IS NULL) OR "
+            "(status='accepted' AND completed_at IS NOT NULL AND ((operation="
+            "'generate_creative_concepts' AND outcome_concept_run_id IS NOT NULL) OR "
+            "(operation='select_creative_concept' AND outcome_selection_id IS NOT NULL "
+            "AND outcome_candidate_id IS NOT NULL) OR (operation='generate_script' "
+            "AND outcome_script_run_id IS NOT NULL AND outcome_script_version_id IS NOT NULL)))",
+            name="ck_creative_operation_outcome",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    outcome_concept_run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_candidate_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_selection_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_script_run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_script_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -1486,7 +1894,8 @@ class AuditEventRecord(Base):
             "'source_asset.created', 'source_asset.version_created', "
             "'source_asset.archived', 'source_object.uploaded', "
             "'document_extraction.completed', 'brief_extraction.completed', "
-            "'brief_candidate.accepted', 'brief_candidate.rejected')",
+            "'brief_candidate.accepted', 'brief_candidate.rejected', "
+            "'creative_concept.generated', 'creative_concept.selected', 'script.generated')",
             name="ck_audit_action",
         ),
         Index(

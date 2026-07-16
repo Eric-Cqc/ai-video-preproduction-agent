@@ -12,6 +12,11 @@ from services.api.app.domain import (
     BriefIngestionOperation,
     BriefIngestionSourceAsset,
     BriefVersion,
+    CreativeConceptCandidate,
+    CreativeConceptRun,
+    CreativeConceptSelection,
+    CreativeGenerationOperation,
+    CreativeGenerationOperationType,
     DocumentExtraction,
     DocumentExtractionOperation,
     Membership,
@@ -19,6 +24,8 @@ from services.api.app.domain import (
     Project,
     RequirementIssue,
     RequirementIssueStatus,
+    ScriptRun,
+    ScriptVersion,
     SourceAsset,
     SourceAssetOperation,
     SourceAssetOperationType,
@@ -360,6 +367,66 @@ class BriefCandidateReviewRepository(Protocol):
     def finalize(
         self, review: BriefCandidateReview, *, expected_version: int
     ) -> BriefCandidateReview: ...
+
+
+class CreativeConceptRunRepository(Protocol):
+    def add(self, run: CreativeConceptRun) -> CreativeConceptRun: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> CreativeConceptRun | None: ...
+
+
+class CreativeConceptCandidateRepository(Protocol):
+    def add(self, candidate: CreativeConceptCandidate) -> CreativeConceptCandidate: ...
+    def get(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        run_id: UUID,
+        candidate_id: UUID,
+    ) -> CreativeConceptCandidate | None: ...
+    def list_for_run(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> list[CreativeConceptCandidate]: ...
+
+
+class CreativeConceptSelectionRepository(Protocol):
+    def add(self, selection: CreativeConceptSelection) -> CreativeConceptSelection: ...
+    def get_for_run(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> CreativeConceptSelection | None: ...
+
+
+class ScriptRunRepository(Protocol):
+    def add(self, run: ScriptRun) -> ScriptRun: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> ScriptRun | None: ...
+
+
+class ScriptVersionRepository(Protocol):
+    def add(self, version: ScriptVersion) -> ScriptVersion: ...
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, version_id: UUID
+    ) -> ScriptVersion | None: ...
+
+
+class CreativeGenerationOperationRepository(Protocol):
+    def reserve(
+        self, operation: CreativeGenerationOperation
+    ) -> CreativeGenerationOperation | None: ...
+    def get_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: CreativeGenerationOperationType,
+        idempotency_key: str,
+    ) -> CreativeGenerationOperation | None: ...
+    def finalize_accepted(
+        self, operation: CreativeGenerationOperation, *, expected_version: int
+    ) -> CreativeGenerationOperation: ...
 
 
 class RequirementIssueRepository(Protocol):

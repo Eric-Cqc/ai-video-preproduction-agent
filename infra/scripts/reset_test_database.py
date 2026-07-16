@@ -23,7 +23,10 @@ def main() -> int:
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE TABLE brief_candidate_reviews, brief_extraction_attempts, "
+                    "TRUNCATE TABLE creative_generation_operations, script_versions, script_runs, "
+                    "creative_concept_selections, creative_concept_candidates, "
+                    "creative_concept_runs, "
+                    "brief_candidate_reviews, brief_extraction_attempts, "
                     "brief_extraction_runs, "
                     "document_extraction_operations, document_extractions, "
                     "brief_ingestion_source_assets, source_asset_operations, "

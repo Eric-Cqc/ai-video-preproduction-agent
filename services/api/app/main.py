@@ -14,6 +14,7 @@ from starlette.responses import Response
 
 from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.candidate_review_services import BriefCandidateReviewService
+from services.api.app.application.creative_services import CreativeApplicationService
 from services.api.app.application.document_extraction_services import (
     DocumentExtractionApplicationService,
 )
@@ -26,6 +27,11 @@ from services.api.app.application.errors import (
     TemporaryIdentityDisabled,
 )
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
+from services.api.app.application.model_provider import (
+    DeterministicFakeProvider,
+    ProviderOutcome,
+    ProviderOutcomeStatus,
+)
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.application.source_asset_services import SourceAssetApplicationService
 from services.api.app.application.source_object_services import SourceObjectApplicationService
@@ -50,6 +56,7 @@ from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
 from services.api.app.presentation.brief_routes import router as brief_router
 from services.api.app.presentation.candidate_review_routes import router as candidate_review_router
+from services.api.app.presentation.creative_routes import router as creative_router
 from services.api.app.presentation.document_extraction_routes import (
     router as document_extraction_router,
 )
@@ -114,6 +121,10 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_candidate_review_service = BriefCandidateReviewService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.creative_application_service = CreativeApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory),
+        DeterministicFakeProvider(ProviderOutcome(ProviderOutcomeStatus.ERROR)),
+    )
     app.state.ingestion_application_service = BriefIngestionApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -152,6 +163,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(tenant_router)
     app.include_router(brief_router)
     app.include_router(candidate_review_router)
+    app.include_router(creative_router)
     app.include_router(ingestion_router)
     app.include_router(source_asset_router)
     app.include_router(source_object_router)
