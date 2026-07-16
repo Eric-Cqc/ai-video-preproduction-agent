@@ -8,6 +8,8 @@ class CreativeGenerationOperationType(StrEnum):
     GENERATE_CONCEPTS = "generate_creative_concepts"
     SELECT_CONCEPT = "select_creative_concept"
     GENERATE_SCRIPT = "generate_script"
+    GENERATE_STORYBOARD = "generate_storyboard"
+    GENERATE_SHOT_PLAN = "generate_shot_plan"
 
 
 class CreativeGenerationOperationStatus(StrEnum):

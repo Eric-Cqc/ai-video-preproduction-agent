@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ai-video-preproduction-agent.local/contracts/storyboard-v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "scenes"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "scenes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "storyboard_scene_number",
+          "source_script_scene_number",
+          "narrative_purpose",
+          "visual_summary",
+          "composition",
+          "camera_language",
+          "subject",
+          "setting",
+          "action",
+          "lighting",
+          "color_palette",
+          "continuity_notes",
+          "estimated_duration_seconds"
+        ],
+        "properties": {
+          "storyboard_scene_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "source_script_scene_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60
+          },
+          "narrative_purpose": { "type": "string", "maxLength": 500 },
+          "visual_summary": { "type": "string", "maxLength": 1500 },
+          "composition": { "type": "string", "maxLength": 500 },
+          "camera_language": { "type": "string", "maxLength": 500 },
+          "subject": { "type": "string", "maxLength": 500 },
+          "setting": { "type": "string", "maxLength": 500 },
+          "action": { "type": "string", "maxLength": 1000 },
+          "lighting": { "type": "string", "maxLength": 500 },
+          "color_palette": {
+            "type": "array",
+            "maxItems": 12,
+            "items": { "type": "string", "maxLength": 80 }
+          },
+          "continuity_notes": { "type": "string", "maxLength": 1000 },
+          "estimated_duration_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          }
+        }
+      }
+    }
+  }
+}

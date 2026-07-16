@@ -7,6 +7,8 @@ from jsonschema import Draft7Validator
 
 CREATIVE_CONCEPT_SCHEMA_VERSION = "1.0.0"
 SCRIPT_SCHEMA_VERSION = "1.0.0"
+STORYBOARD_SCHEMA_VERSION = "1.0.0"
+SHOT_PLAN_SCHEMA_VERSION = "1.0.0"
 
 
 @lru_cache(maxsize=4)
@@ -24,6 +26,25 @@ def validate_creative_concept(value: object) -> None:
 def validate_script(value: object) -> None:
     Draft7Validator(_schema("script-v1.schema.json")).validate(value)
     _validate_sequence(value, "scenes", "scene_number")
+
+
+def validate_storyboard(value: object) -> None:
+    Draft7Validator(_schema("storyboard-v1.schema.json")).validate(value)
+    _validate_sequence(value, "scenes", "storyboard_scene_number")
+
+
+def validate_shot_plan(value: object) -> None:
+    Draft7Validator(_schema("shot-plan-v1.schema.json")).validate(value)
+    _validate_sequence(value, "shots", "shot_number")
+    if isinstance(value, dict):
+        for shot in value["shots"]:
+            if isinstance(shot, dict):
+                prompt = str(shot["generation_prompt"]).lower()
+                if any(
+                    token in prompt
+                    for token in ("http://", "https://", "fetch ", "tool call", "run shell")
+                ):
+                    raise ValueError("generation prompt contains an external-action instruction")
 
 
 def _validate_sequence(value: object, key: str, number_key: str) -> None:
