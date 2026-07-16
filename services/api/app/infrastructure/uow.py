@@ -3,6 +3,7 @@ from types import TracebackType
 from sqlalchemy.orm import Session
 
 from services.api.app.application.repositories import (
+    ArtifactRevisionLinkRepository,
     AuditEventRepository,
     BriefCandidateReviewRepository,
     BriefExtractionAttemptRepository,
@@ -15,10 +16,16 @@ from services.api.app.application.repositories import (
     CreativeConceptRunRepository,
     CreativeConceptSelectionRepository,
     CreativeGenerationOperationRepository,
+    DeliveryExportFileRepository,
+    DeliveryOperationRepository,
+    DeliveryPackageRepository,
+    DeliveryPackageVersionRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
+    PlanningReviewRepository,
+    PlanningRevisionRequestRepository,
     ProjectRepository,
     RequirementIssueRepository,
     ScriptRunRepository,
@@ -68,6 +75,15 @@ from services.api.app.infrastructure.repositories import (
     SqlAlchemySourceObjectUploadRepository,
     SqlAlchemyWorkspaceRepository,
 )
+from services.api.app.infrastructure.review_revision_repositories import (
+    SqlAlchemyArtifactRevisionLinkRepository,
+    SqlAlchemyDeliveryExportFileRepository,
+    SqlAlchemyDeliveryOperationRepository,
+    SqlAlchemyDeliveryPackageRepository,
+    SqlAlchemyDeliveryPackageVersionRepository,
+    SqlAlchemyPlanningReviewRepository,
+    SqlAlchemyPlanningRevisionRequestRepository,
+)
 from services.api.app.infrastructure.visual_planning_repositories import (
     SqlAlchemyShotPlanRunRepository,
     SqlAlchemyShotPlanVersionRepository,
@@ -110,6 +126,13 @@ class SqlAlchemyUnitOfWork:
     shot_plan_versions: ShotPlanVersionRepository
     visual_planning_operations: VisualPlanningOperationRepository
     audit_events: AuditEventRepository
+    planning_reviews: PlanningReviewRepository
+    planning_revision_requests: PlanningRevisionRequestRepository
+    artifact_revision_links: ArtifactRevisionLinkRepository
+    delivery_packages: DeliveryPackageRepository
+    delivery_package_versions: DeliveryPackageVersionRepository
+    delivery_export_files: DeliveryExportFileRepository
+    delivery_operations: DeliveryOperationRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
         self.session_factory = session_factory
@@ -161,6 +184,13 @@ class SqlAlchemyUnitOfWork:
         self.shot_plan_versions = SqlAlchemyShotPlanVersionRepository(self.session)
         self.visual_planning_operations = SqlAlchemyVisualPlanningOperationRepository(self.session)
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
+        self.planning_reviews = SqlAlchemyPlanningReviewRepository(self.session)
+        self.planning_revision_requests = SqlAlchemyPlanningRevisionRequestRepository(self.session)
+        self.artifact_revision_links = SqlAlchemyArtifactRevisionLinkRepository(self.session)
+        self.delivery_packages = SqlAlchemyDeliveryPackageRepository(self.session)
+        self.delivery_package_versions = SqlAlchemyDeliveryPackageVersionRepository(self.session)
+        self.delivery_export_files = SqlAlchemyDeliveryExportFileRepository(self.session)
+        self.delivery_operations = SqlAlchemyDeliveryOperationRepository(self.session)
         return self
 
     def __exit__(

@@ -1,8 +1,9 @@
 # Current project handoff
 
-> Authoritative current state (2026-07-16): Stage 10 and Stage 11 are complete
-> and merged into `main`. Stage 12 Storyboard and Shot Plan is authorized and
-> implemented on `feat/storyboard-shot-plan`, with migration head `9031dcffc3ea`.
+> Authoritative current state (2026-07-16): Stage 10, Stage 11 and Stage 12 are
+> complete and merged into `main`. Stage 13 Review, Revision and Delivery is
+> authorized and implemented on `feat/review-revision-delivery`, with migration
+> head `a1b2c3d4e5f6`.
 > The remainder of this document records historical handoff material from the
 > earlier Source Asset milestone; do not use its old branch, head, or next-step
 > instructions as current scope.
@@ -15,9 +16,9 @@ This file is for handing the repository to a new ChatGPT/Codex account. It recor
 
 - Repository name: `ai-video-preproduction-agent`
 - Local path: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
-- Current branch: `feat/storyboard-shot-plan`
-- Current Alembic migration head: `9031dcffc3ea`
-- Current head migration file: `infra/migrations/versions/9031dcffc3ea_create_storyboard_and_shot_plan_.py`
+- Current branch: `feat/review-revision-delivery`
+- Current Alembic migration head: `a1b2c3d4e5f6`
+- Current head migration file: `infra/migrations/versions/a1b2c3d4e5f6_create_review_revision_delivery.py`
 
 ## Recent commits
 
@@ -59,13 +60,14 @@ Do not commit or push unless the user explicitly asks.
 - Stage 10: Brief candidate human review completed and merged into `main`.
 - Stage 11: Creative Concept and Script workflow completed and merged into `main`.
 - Stage 12A/B: Storyboard and Shot Plan immutable persistence, deterministic offline generation, semantic validation, services, APIs, replay, permissions, concurrency, rollback and contract tests completed on `feat/storyboard-shot-plan`.
+- Stage 13: immutable planning review, revision successor lineage, deterministic delivery package and JSON/CSV/ZIP export workflow is implemented on `feat/review-revision-delivery`.
 
 ## Current stage and milestone
 
-- Current stage: Stage 12 — Storyboard and Shot Plan.
-- Current milestone: complete for submission review; no commit or push has been performed.
-- Current plan file: `docs/development/plans/storyboard-shot-plan.md`
-- Current plan status: Milestones A–E complete; deterministic offline provider only.
+- Current stage: Stage 13 — Review, Revision and Delivery.
+- Current milestone: implementation complete for local verification; no Stage 14 scope.
+- Current plan file: `docs/development/plans/review-revision-delivery-plan.md`
+- Current plan status: persistence, service/API, deterministic offline export and validation gates are implemented.
 
 ## Current stage completed content
 
@@ -138,6 +140,20 @@ Historical Milestone E was not implemented on that branch:
   and do not expose request digests, keys, operation rows, prompts or raw output.
 - Stage 12A and Stage 12B targeted PostgreSQL tests, migration checks, contract
   parity, `make test` and full `make check` are the required final gates.
+
+## Stage 13 implementation handoff
+
+- `planning_reviews` records exact human approval, rejection and revision
+  requests for Script, Storyboard, Shot Plan or a complete planning bundle.
+- `planning_revision_requests` and `planning_artifact_revision_links` preserve
+  immutable successor lineage; predecessor rows are never updated.
+- Delivery packages pin approved artifact IDs and content digests. Exports are
+  deterministic JSON/CSV/README/ZIP bytes staged through StoragePort.
+- All Stage 13 mutations use scoped digest idempotency, CAS finalization,
+  bounded audit actions and opaque 404/role checks. The deterministic fixture
+  remains offline-only; no real provider, network, renderer, job or UI exists.
+- Stage 13 head is `a1b2c3d4e5f6`; the plan and ADR-058 through ADR-063 are the
+  authoritative implementation references.
 
 ## Frozen architecture and security decisions
 

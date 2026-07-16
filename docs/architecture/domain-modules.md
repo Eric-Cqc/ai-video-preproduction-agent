@@ -23,6 +23,13 @@ Storyboard/Shot Plan 模块接收已固定的 ScriptVersion/StoryboardVersion li
 严格契约和语义校验生成候选。该模块不生成图片或视频，不执行 Prompt，不拥有
 真实 Provider、网络、Job 或 UI。
 
+Stage 13 Review & Approval records human decisions over exact immutable
+planning snapshots. Revision creates validated immutable successors and
+explicit lineage links. Export owns only deterministic JSON/CSV/README/ZIP
+delivery packaging for an approved bundle; it does not render, publish, or
+manage background delivery jobs. Review, revision and delivery remain
+tenant-scoped and use the shared repository/UoW boundary.
+
 Source Assets 模块当前只保存 metadata-only identity：`SourceAssetVersion` 插入后不可变，新的声明产生 successor，predecessor 永不修改。SHA-256 和 byte size 只是客户端声明，same-content 检测只在同 tenant、同 Project 返回提示，绝不自动合并。Brief ingestion 可通过一个不可变、有序的 relation 引用 active SourceAssetVersion；relation 顺序进入 ingestion digest，attachment、Brief mutation 与审计共用同一个 UoW transaction。
 
 ## 冻结决定

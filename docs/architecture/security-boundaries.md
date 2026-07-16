@@ -33,6 +33,12 @@
 - Storyboard/Shot Plan request digest、Idempotency-Key、operation row、Prompt/raw
   provider output never cross the API boundary. URL/shell/code/tool-like text is
   untrusted and rejected; the only provider is an offline deterministic fixture.
+- Stage 13 review, revision, package and export operations apply the same
+  tenant/project scope and opaque-404 policy. Only an exact approved bundle can
+  be packaged; revision successors are immutable and linked to their request.
+  Export keys are opaque, bytes are bounded and deterministic, and storage
+  compensation removes staged/final objects when the database transaction
+  fails. Generated export files are never committed to source control.
 - CORS 仍使用显式 origin/method/header，不允许 wildcard credentials。
 
 ## 冻结决定

@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an explicit, human-controlled Creative Concept and Script loop on top of reviewed BriefVersions. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an explicit human review, immutable revision and deterministic delivery-package loop on top of Storyboard and Shot Plan artifacts. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -20,6 +20,7 @@ This repository contains the executable foundation for an **AI video preproducti
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
+- Tenant-scoped human review, immutable revision successors, and deterministic JSON/CSV/ZIP delivery exports pinned to an approved planning bundle.
 
 There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance or selection, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature. Candidate acceptance and concept selection are always explicit authorized human actions.
 
@@ -34,6 +35,21 @@ Only canonical Structured Brief v1 output becomes an immutable `human_review_req
 Stage 11 accepts a scoped draft BriefVersion as generation input and pins its canonical digest, provider/model identity, and server-owned instruction-template version. The deterministic fake provider must return exactly three canonical Creative Concept objects; malformed, unsafe, or schema-invalid output rolls back without a partial run, candidate, operation, or audit record. A human with mutation authority makes one immutable selection per concept run. Only that selected candidate can produce a canonical immutable ScriptVersion. Idempotency is scoped to Organization, Workspace, Project, operation, and key; a matching accepted request replays without a provider call or extra audit event.
 
 Neither raw prompts nor raw provider output is persisted or included in audit payloads. Concept, selection, script, and operation reads are tenant/project scoped and inaccessible resources share the same opaque 404 response. Scripts remain draft candidates: Stage 11 adds no script approval, editing, storyboard, shot plan, or media generation.
+
+## Stage 13 review, revision and delivery loop
+
+Human review records an immutable approval, rejection or revision request for
+an exact ScriptVersion, StoryboardVersion, ShotPlanVersion or complete planning
+bundle. Completing a revision request creates validated immutable successor
+versions and explicit predecessor links; the predecessor's content and every
+persisted column remain unchanged. Review, revision and delivery mutations use
+tenant-scoped digest idempotency and compare-and-swap finalization.
+
+Only an exact approved planning bundle can create a DeliveryPackageVersion.
+Its manifest pins all three artifact IDs and content digests. The service emits
+canonical `manifest.json`, artifact JSON, `shot-plan.csv`, `README.txt` and a
+reproducible `delivery-package.zip` through the existing StoragePort. Exports
+are offline and deterministic; no generated export bytes are checked in.
 
 ## Deterministic document extraction
 
@@ -167,6 +183,9 @@ Protected resources use opaque 404 behavior. A Project/Brief/Version ID alone is
 - `GET .../source-assets/{source_asset_id}/versions/{version_id}/object` and `/object/content`
 - `POST .../source-assets/{source_asset_id}/versions/{version_id}/extractions`
 - `GET .../source-assets/{source_asset_id}/versions/{version_id}/extractions/{extraction_id}`
+- `POST/GET .../projects/{project_id}/planning-reviews`
+- `GET .../projects/{project_id}/revision-requests/{revision_request_id}` and explicit `POST .../complete`/`cancel`
+- `POST/GET .../projects/{project_id}/delivery-packages` and deterministic export/download endpoints
 
 Project PATCH only accepts `name`, `description`, and `expected_version`. Status changes use explicit lifecycle endpoints. Stale versions, invalid lifecycle changes, and slug conflicts return 409. Errors use `{error: {code, message, correlation_id}}` and never expose raw SQL or stack traces.
 
@@ -227,3 +246,9 @@ Brief/Concept/Selection/Script lineage and uses only the deterministic offline
 fixture provider. It has no real model SDK, network, image/video generation,
 media rendering, background job, editable board or UI scope. See
 [storyboard-shot-plan.md](docs/development/plans/storyboard-shot-plan.md).
+
+Stage 13 review, revision and delivery decisions are recorded by ADR-058
+through ADR-063. The implementation plan is
+[review-revision-delivery-plan.md](docs/development/plans/review-revision-delivery-plan.md).
+The workflow remains offline-only and does not introduce real providers,
+network access, media generation, queues, UI or Stage 14 scope.

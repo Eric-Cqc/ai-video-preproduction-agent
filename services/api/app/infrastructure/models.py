@@ -1,4 +1,7 @@
 from datetime import datetime
+
+# Stage 13 database CHECK expressions intentionally mirror PostgreSQL predicates.
+# ruff: noqa: E501
 from uuid import UUID
 
 from sqlalchemy import (
@@ -1757,7 +1760,7 @@ class ScriptVersionRecord(Base):
             name="fk_script_versions_run",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("version_number = 1", name="ck_script_version_number"),
+        CheckConstraint("version_number >= 1", name="ck_script_version_number"),
         CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_script_version_digest"),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
@@ -2035,7 +2038,7 @@ class StoryboardVersionRecord(Base):
         ),
         CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_storyboard_version_digest"),
         CheckConstraint(
-            "version_number = 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60",
+            "version_number >= 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60",
             name="ck_storyboard_version_bounds",
         ),
     )
@@ -2202,7 +2205,7 @@ class ShotPlanVersionRecord(Base):
         ),
         CheckConstraint("content_digest ~ '^[0-9a-f]{64}$'", name="ck_shot_plan_version_digest"),
         CheckConstraint(
-            "version_number = 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60 "
+            "version_number >= 1 AND total_duration_seconds > 0 AND scene_count BETWEEN 1 AND 60 "
             "AND shot_count BETWEEN 1 AND 180",
             name="ck_shot_plan_version_bounds",
         ),
@@ -2332,6 +2335,691 @@ class VisualPlanningOperationRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
 
+class PlanningReviewRecord(Base):
+    __tablename__ = "planning_reviews"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_planning_reviews_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "script_version_id"],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+            ],
+            name="fk_planning_reviews_script",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "storyboard_version_id"],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+            ],
+            name="fk_planning_reviews_storyboard",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "shot_plan_version_id"],
+            [
+                "shot_plan_versions.organization_id",
+                "shot_plan_versions.workspace_id",
+                "shot_plan_versions.project_id",
+                "shot_plan_versions.id",
+            ],
+            name="fk_planning_reviews_shot_plan",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "artifact_type IN ('script', 'storyboard', 'shot_plan', 'planning_bundle')",
+            name="ck_planning_reviews_artifact_type",
+        ),
+        CheckConstraint(
+            "outcome IN ('approved', 'revision_requested', 'rejected')",
+            name="ck_planning_reviews_outcome",
+        ),
+        CheckConstraint("review_round >= 1", name="ck_planning_reviews_round"),
+        CheckConstraint(
+            "length(summary) BETWEEN 1 AND 1000 AND jsonb_typeof(requested_changes) = 'object'",
+            name="ck_planning_reviews_bounds",
+        ),
+        CheckConstraint(
+            "(artifact_type = 'script' AND script_version_id IS NOT NULL AND storyboard_version_id IS NULL AND shot_plan_version_id IS NULL) OR "
+            "(artifact_type = 'storyboard' AND script_version_id IS NULL AND storyboard_version_id IS NOT NULL AND shot_plan_version_id IS NULL) OR "
+            "(artifact_type = 'shot_plan' AND script_version_id IS NULL AND storyboard_version_id IS NULL AND shot_plan_version_id IS NOT NULL) OR "
+            "(artifact_type = 'planning_bundle' AND script_version_id IS NOT NULL AND storyboard_version_id IS NOT NULL AND shot_plan_version_id IS NOT NULL)",
+            name="ck_planning_reviews_artifact_pair",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "artifact_type",
+            "script_version_id",
+            "storyboard_version_id",
+            "shot_plan_version_id",
+            "review_round",
+            name="uq_planning_reviews_round",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_planning_reviews_tenant_id",
+        ),
+        Index(
+            "uq_planning_reviews_script_round",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "script_version_id",
+            "review_round",
+            unique=True,
+            postgresql_where=text("artifact_type = 'script'"),
+        ),
+        Index(
+            "uq_planning_reviews_storyboard_round",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "storyboard_version_id",
+            "review_round",
+            unique=True,
+            postgresql_where=text("artifact_type = 'storyboard'"),
+        ),
+        Index(
+            "uq_planning_reviews_shot_plan_round",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "shot_plan_version_id",
+            "review_round",
+            unique=True,
+            postgresql_where=text("artifact_type = 'shot_plan'"),
+        ),
+        Index(
+            "uq_planning_reviews_bundle_round",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "script_version_id",
+            "storyboard_version_id",
+            "shot_plan_version_id",
+            "review_round",
+            unique=True,
+            postgresql_where=text("artifact_type = 'planning_bundle'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    script_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    storyboard_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    shot_plan_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    review_round: Mapped[int] = mapped_column(Integer, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    requested_changes: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    reviewed_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PlanningRevisionRequestRecord(Base):
+    __tablename__ = "planning_revision_requests"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_planning_revision_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "review_id"],
+            [
+                "planning_reviews.organization_id",
+                "planning_reviews.workspace_id",
+                "planning_reviews.project_id",
+                "planning_reviews.id",
+            ],
+            name="fk_planning_revision_review",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_script_version_id"],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+            ],
+            name="fk_planning_revision_source_script",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_storyboard_version_id"],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+            ],
+            name="fk_planning_revision_source_storyboard",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "source_shot_plan_version_id"],
+            [
+                "shot_plan_versions.organization_id",
+                "shot_plan_versions.workspace_id",
+                "shot_plan_versions.project_id",
+                "shot_plan_versions.id",
+            ],
+            name="fk_planning_revision_source_shot_plan",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "successor_script_version_id"],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+            ],
+            name="fk_planning_revision_successor_script",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "successor_storyboard_version_id"],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+            ],
+            name="fk_planning_revision_successor_storyboard",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "successor_shot_plan_version_id"],
+            [
+                "shot_plan_versions.organization_id",
+                "shot_plan_versions.workspace_id",
+                "shot_plan_versions.project_id",
+                "shot_plan_versions.id",
+            ],
+            name="fk_planning_revision_successor_shot_plan",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "artifact_type IN ('script', 'storyboard', 'shot_plan', 'planning_bundle')",
+            name="ck_planning_revision_artifact_type",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'completed', 'cancelled')", name="ck_planning_revision_status"
+        ),
+        CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_planning_revision_digest"),
+        CheckConstraint("version >= 1", name="ck_planning_revision_version"),
+        CheckConstraint(
+            "jsonb_typeof(requested_changes) = 'object'", name="ck_planning_revision_changes"
+        ),
+        CheckConstraint(
+            "(artifact_type = 'script' AND source_script_version_id IS NOT NULL AND source_storyboard_version_id IS NULL AND source_shot_plan_version_id IS NULL) OR "
+            "(artifact_type = 'storyboard' AND source_script_version_id IS NULL AND source_storyboard_version_id IS NOT NULL AND source_shot_plan_version_id IS NULL) OR "
+            "(artifact_type = 'shot_plan' AND source_script_version_id IS NULL AND source_storyboard_version_id IS NULL AND source_shot_plan_version_id IS NOT NULL) OR "
+            "(artifact_type = 'planning_bundle' AND source_script_version_id IS NOT NULL AND source_storyboard_version_id IS NOT NULL AND source_shot_plan_version_id IS NOT NULL)",
+            name="ck_planning_revision_source_pair",
+        ),
+        CheckConstraint(
+            "(status IN ('open', 'cancelled') AND completed_at IS NULL AND successor_script_version_id IS NULL AND successor_storyboard_version_id IS NULL AND successor_shot_plan_version_id IS NULL) OR "
+            "(status = 'completed' AND completed_at IS NOT NULL AND ((artifact_type = 'script' AND successor_script_version_id IS NOT NULL AND successor_storyboard_version_id IS NULL AND successor_shot_plan_version_id IS NULL) OR (artifact_type = 'storyboard' AND successor_script_version_id IS NULL AND successor_storyboard_version_id IS NOT NULL AND successor_shot_plan_version_id IS NULL) OR (artifact_type = 'shot_plan' AND successor_script_version_id IS NULL AND successor_storyboard_version_id IS NULL AND successor_shot_plan_version_id IS NOT NULL) OR (artifact_type = 'planning_bundle' AND successor_script_version_id IS NOT NULL AND successor_storyboard_version_id IS NOT NULL AND successor_shot_plan_version_id IS NOT NULL)))",
+            name="ck_planning_revision_outcome",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "review_id",
+            name="uq_planning_revision_review",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_planning_revision_tenant_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    review_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_script_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    source_storyboard_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    source_shot_plan_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    requested_changes: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    successor_script_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    successor_storyboard_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    successor_shot_plan_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class PlanningArtifactRevisionLinkRecord(Base):
+    __tablename__ = "planning_artifact_revision_links"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_revision_link_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "revision_request_id"],
+            [
+                "planning_revision_requests.organization_id",
+                "planning_revision_requests.workspace_id",
+                "planning_revision_requests.project_id",
+                "planning_revision_requests.id",
+            ],
+            name="fk_revision_link_request",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "artifact_type IN ('script', 'storyboard', 'shot_plan')", name="ck_revision_link_type"
+        ),
+        CheckConstraint(
+            "predecessor_version_number >= 1 AND successor_version_number > predecessor_version_number",
+            name="ck_revision_link_versions",
+        ),
+        CheckConstraint(
+            "predecessor_version_id <> successor_version_id", name="ck_revision_link_distinct"
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "predecessor_version_id",
+            name="uq_revision_link_predecessor",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "successor_version_id",
+            name="uq_revision_link_successor",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    predecessor_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    successor_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    predecessor_version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    successor_version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision_request_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DeliveryPackageRecord(Base):
+    __tablename__ = "delivery_packages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_delivery_packages_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "current_version_id"],
+            [
+                "delivery_package_versions.organization_id",
+                "delivery_package_versions.workspace_id",
+                "delivery_package_versions.project_id",
+                "delivery_package_versions.id",
+            ],
+            name="fk_delivery_packages_current_version",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
+        CheckConstraint("version >= 1", name="ck_delivery_packages_version"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_delivery_packages_tenant_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    current_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class DeliveryPackageVersionRecord(Base):
+    __tablename__ = "delivery_package_versions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_delivery_package_versions_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "delivery_package_id"],
+            [
+                "delivery_packages.organization_id",
+                "delivery_packages.workspace_id",
+                "delivery_packages.project_id",
+                "delivery_packages.id",
+            ],
+            name="fk_delivery_package_versions_package",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "script_version_id"],
+            [
+                "script_versions.organization_id",
+                "script_versions.workspace_id",
+                "script_versions.project_id",
+                "script_versions.id",
+            ],
+            name="fk_delivery_package_versions_script",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "storyboard_version_id"],
+            [
+                "storyboard_versions.organization_id",
+                "storyboard_versions.workspace_id",
+                "storyboard_versions.project_id",
+                "storyboard_versions.id",
+            ],
+            name="fk_delivery_package_versions_storyboard",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "shot_plan_version_id"],
+            [
+                "shot_plan_versions.organization_id",
+                "shot_plan_versions.workspace_id",
+                "shot_plan_versions.project_id",
+                "shot_plan_versions.id",
+            ],
+            name="fk_delivery_package_versions_shot_plan",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "approval_review_id"],
+            [
+                "planning_reviews.organization_id",
+                "planning_reviews.workspace_id",
+                "planning_reviews.project_id",
+                "planning_reviews.id",
+            ],
+            name="fk_delivery_package_versions_review",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "supersedes_version_id"],
+            [
+                "delivery_package_versions.organization_id",
+                "delivery_package_versions.workspace_id",
+                "delivery_package_versions.project_id",
+                "delivery_package_versions.id",
+            ],
+            name="fk_delivery_package_versions_supersedes",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("version_number >= 1", name="ck_delivery_package_version_number"),
+        CheckConstraint(
+            "script_content_digest ~ '^[0-9a-f]{64}$' AND storyboard_content_digest ~ '^[0-9a-f]{64}$' AND shot_plan_content_digest ~ '^[0-9a-f]{64}$' AND manifest_digest ~ '^[0-9a-f]{64}$'",
+            name="ck_delivery_package_digests",
+        ),
+        CheckConstraint(
+            "manifest_schema_version = 'delivery-package-v1' AND jsonb_typeof(manifest) = 'object'",
+            name="ck_delivery_package_manifest",
+        ),
+        UniqueConstraint(
+            "delivery_package_id", "version_number", name="uq_delivery_package_versions_number"
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_delivery_package_versions_tenant_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    delivery_package_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    script_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storyboard_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    shot_plan_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    approval_review_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    script_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    storyboard_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    shot_plan_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_schema_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    manifest: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    supersedes_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class DeliveryExportFileRecord(Base):
+    __tablename__ = "delivery_export_files"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_delivery_export_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "delivery_package_version_id"],
+            [
+                "delivery_package_versions.organization_id",
+                "delivery_package_versions.workspace_id",
+                "delivery_package_versions.project_id",
+                "delivery_package_versions.id",
+            ],
+            name="fk_delivery_export_package_version",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "format IN ('manifest.json', 'script.json', 'storyboard.json', 'shot-plan.json', 'shot-plan.csv', 'README.txt', 'delivery-package.zip')",
+            name="ck_delivery_export_format",
+        ),
+        CheckConstraint(
+            "filename !~ '[\\\\/]' AND filename !~ '\\.\\.'", name="ck_delivery_export_filename"
+        ),
+        CheckConstraint(
+            "storage_key ~ '^object-[A-Za-z0-9]{32}$'", name="ck_delivery_export_storage_key"
+        ),
+        CheckConstraint(
+            "checksum ~ '^[0-9a-f]{64}$' AND byte_size > 0 AND byte_size <= 10485760",
+            name="ck_delivery_export_bounds",
+        ),
+        UniqueConstraint("storage_adapter", "storage_key", name="uq_delivery_export_storage_key"),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "delivery_package_version_id",
+            "format",
+            name="uq_delivery_export_format",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_delivery_export_tenant_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    delivery_package_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    format: Mapped[str] = mapped_column(String(20), nullable=False)
+    filename: Mapped[str] = mapped_column(String(120), nullable=False)
+    storage_adapter: Mapped[str] = mapped_column(String(40), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DeliveryOperationRecord(Base):
+    __tablename__ = "delivery_operations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_delivery_operation_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_review_id"],
+            [
+                "planning_reviews.organization_id",
+                "planning_reviews.workspace_id",
+                "planning_reviews.project_id",
+                "planning_reviews.id",
+            ],
+            name="fk_delivery_operation_review",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_revision_request_id"],
+            [
+                "planning_revision_requests.organization_id",
+                "planning_revision_requests.workspace_id",
+                "planning_revision_requests.project_id",
+                "planning_revision_requests.id",
+            ],
+            name="fk_delivery_operation_revision",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_delivery_package_id"],
+            [
+                "delivery_packages.organization_id",
+                "delivery_packages.workspace_id",
+                "delivery_packages.project_id",
+                "delivery_packages.id",
+            ],
+            name="fk_delivery_operation_package",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "outcome_delivery_package_version_id",
+            ],
+            [
+                "delivery_package_versions.organization_id",
+                "delivery_package_versions.workspace_id",
+                "delivery_package_versions.project_id",
+                "delivery_package_versions.id",
+            ],
+            name="fk_delivery_operation_package_version",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "outcome_export_file_id"],
+            [
+                "delivery_export_files.organization_id",
+                "delivery_export_files.workspace_id",
+                "delivery_export_files.project_id",
+                "delivery_export_files.id",
+            ],
+            name="fk_delivery_operation_export",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation IN ('submit_planning_review', 'create_revision_request', 'complete_revision_request', 'create_delivery_package', 'export_delivery_package')",
+            name="ck_delivery_operation_type",
+        ),
+        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_delivery_operation_status"),
+        CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_delivery_operation_digest"),
+        CheckConstraint("version >= 1", name="ck_delivery_operation_version"),
+        CheckConstraint(
+            "(status = 'reserved' AND completed_at IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR "
+            "(status = 'accepted' AND completed_at IS NOT NULL AND ((operation = 'submit_planning_review' AND outcome_review_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_revision_request' AND outcome_review_id IS NOT NULL AND outcome_revision_request_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'complete_revision_request' AND outcome_revision_request_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_delivery_package' AND outcome_delivery_package_id IS NOT NULL AND outcome_delivery_package_version_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'export_delivery_package' AND outcome_export_file_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL)))",
+            name="ck_delivery_operation_outcome",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_delivery_operation_key",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    outcome_review_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_revision_request_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_delivery_package_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_delivery_package_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    outcome_export_file_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -2353,7 +3041,10 @@ class AuditEventRecord(Base):
             "'document_extraction.completed', 'brief_extraction.completed', "
             "'brief_candidate.accepted', 'brief_candidate.rejected', "
             "'creative_concept.generated', 'creative_concept.selected', 'script.generated', "
-            "'storyboard.generated', 'shot_plan.generated')",
+            "'storyboard.generated', 'shot_plan.generated', "
+            "'planning_review.submitted', 'planning_revision.requested', "
+            "'planning_revision.completed', 'delivery_package.created', "
+            "'delivery_package.exported')",
             name="ck_audit_action",
         ),
         Index(

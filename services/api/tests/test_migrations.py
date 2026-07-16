@@ -12,7 +12,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "9031dcffc3ea"
+    assert revision == "a1b2c3d4e5f6"
     assert tables == {
         "organizations",
         "workspaces",
@@ -46,6 +46,13 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
         "shot_plan_runs",
         "shot_plan_versions",
         "visual_planning_operations",
+        "planning_reviews",
+        "planning_revision_requests",
+        "planning_artifact_revision_links",
+        "delivery_packages",
+        "delivery_package_versions",
+        "delivery_export_files",
+        "delivery_operations",
     }
 
 
@@ -142,3 +149,49 @@ def test_visual_planning_lineage_and_operation_constraints_exist(
             )
         )
     assert constraints == expected
+
+
+def test_review_revision_delivery_constraints_exist(database_engine: Engine) -> None:
+    expected = {
+        "uq_planning_reviews_tenant_id",
+        "uq_planning_revision_tenant_id",
+        "uq_revision_link_predecessor",
+        "uq_revision_link_successor",
+        "uq_delivery_package_versions_tenant_id",
+        "uq_delivery_export_tenant_id",
+        "uq_delivery_operation_key",
+        "ck_delivery_operation_outcome",
+    }
+    expected_review_round_indexes = {
+        "uq_planning_reviews_script_round",
+        "uq_planning_reviews_storyboard_round",
+        "uq_planning_reviews_shot_plan_round",
+        "uq_planning_reviews_bundle_round",
+    }
+    with database_engine.connect() as connection:
+        constraints = set(
+            connection.scalars(
+                text(
+                    "SELECT conname FROM pg_constraint "
+                    "WHERE conname = ANY(:names) AND connamespace = 'public'::regnamespace"
+                ),
+                {"names": list(expected)},
+            )
+        )
+        trigger = connection.scalar(
+            text(
+                "SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_planning_revision_link_scope'"
+            )
+        )
+        review_round_indexes = set(
+            connection.scalars(
+                text(
+                    "SELECT indexname FROM pg_indexes WHERE schemaname='public' "
+                    "AND indexname = ANY(:names)"
+                ),
+                {"names": list(expected_review_round_indexes)},
+            )
+        )
+    assert constraints == expected
+    assert trigger == 1
+    assert review_round_indexes == expected_review_round_indexes
