@@ -162,6 +162,11 @@ export function FoundationStatus({
     "输入本地工作区设置后，可读取或创建项目。",
   );
   const [busy, setBusy] = useState(false);
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [download, setDownload] = useState<{
+    downloadUrl: string;
+    filename: string;
+  } | null>(null);
   const client = useMemo(
     () => createProductClient(apiBaseUrl, context),
     [apiBaseUrl, context],
@@ -214,6 +219,28 @@ export function FoundationStatus({
       setProjectName("");
       setProjectDescription("");
       setNotice("项目已创建。下一步请在 Intake 中登记已批准的制作输入。");
+    } catch (error) {
+      setNotice(messageFor(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runGoldenPath() {
+    if (!selected || !sourceFile) {
+      setNotice("请选择项目和符合 Structured Brief v1 的 JSON 文件。");
+      return;
+    }
+    setBusy(true);
+    setDownload(null);
+    try {
+      const result = await client.runGoldenPath(
+        selected.id,
+        sourceFile,
+        setNotice,
+      );
+      setDownload(result);
+      setNotice("真实制作链已完成，交付 ZIP 可下载。");
     } catch (error) {
       setNotice(messageFor(error));
     } finally {
@@ -314,13 +341,36 @@ export function FoundationStatus({
                 </div>
               </dl>
               <section className="next-step">
-                <h3>下一步：Intake</h3>
+                <h3>运行完整制作链</h3>
                 <p>
-                  登记并验证来源素材后，才能创建可追溯的 Brief 和后续制作产物。
+                  选择符合 Structured Brief v1 的 JSON；每一步都通过真实本地 API
+                  持久化。
                 </p>
-                <button className="button" type="button" disabled>
-                  打开 Intake（需要已批准素材）
+                <input
+                  aria-label="Structured Brief JSON"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(event) =>
+                    setSourceFile(event.target.files?.[0] ?? null)
+                  }
+                />
+                <button
+                  className="button"
+                  type="button"
+                  disabled={busy || !sourceFile}
+                  onClick={() => void runGoldenPath()}
+                >
+                  {busy ? "制作中…" : "开始 Golden Path"}
                 </button>
+                {download ? (
+                  <a
+                    className="button"
+                    href={download.downloadUrl}
+                    download={download.filename}
+                  >
+                    下载 {download.filename}
+                  </a>
+                ) : null}
               </section>
               <details className="artifact-detail">
                 <summary>项目记录</summary>
