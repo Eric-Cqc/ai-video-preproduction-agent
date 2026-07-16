@@ -11,12 +11,18 @@ from services.api.app.application.repositories import (
     BriefIngestionSourceAssetRepository,
     BriefRepository,
     BriefVersionRepository,
+    CreativeConceptCandidateRepository,
+    CreativeConceptRunRepository,
+    CreativeConceptSelectionRepository,
+    CreativeGenerationOperationRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
     ProjectRepository,
     RequirementIssueRepository,
+    ScriptRunRepository,
+    ScriptVersionRepository,
     SourceAssetOperationRepository,
     SourceAssetRepository,
     SourceAssetVersionRepository,
@@ -24,6 +30,14 @@ from services.api.app.application.repositories import (
     SourceObjectRepository,
     SourceObjectUploadRepository,
     WorkspaceRepository,
+)
+from services.api.app.infrastructure.creative_repositories import (
+    SqlAlchemyCreativeConceptCandidateRepository,
+    SqlAlchemyCreativeConceptRunRepository,
+    SqlAlchemyCreativeConceptSelectionRepository,
+    SqlAlchemyCreativeGenerationOperationRepository,
+    SqlAlchemyScriptRunRepository,
+    SqlAlchemyScriptVersionRepository,
 )
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.repositories import (
@@ -72,6 +86,12 @@ class SqlAlchemyUnitOfWork:
     brief_extraction_runs: BriefExtractionRunRepository
     brief_extraction_attempts: BriefExtractionAttemptRepository
     brief_candidate_reviews: BriefCandidateReviewRepository
+    creative_concept_runs: CreativeConceptRunRepository
+    creative_concept_candidates: CreativeConceptCandidateRepository
+    creative_concept_selections: CreativeConceptSelectionRepository
+    script_runs: ScriptRunRepository
+    script_versions: ScriptVersionRepository
+    creative_generation_operations: CreativeGenerationOperationRepository
     audit_events: AuditEventRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -106,6 +126,18 @@ class SqlAlchemyUnitOfWork:
         self.brief_extraction_runs = SqlAlchemyBriefExtractionRunRepository(self.session)
         self.brief_extraction_attempts = SqlAlchemyBriefExtractionAttemptRepository(self.session)
         self.brief_candidate_reviews = SqlAlchemyBriefCandidateReviewRepository(self.session)
+        self.creative_concept_runs = SqlAlchemyCreativeConceptRunRepository(self.session)
+        self.creative_concept_candidates = SqlAlchemyCreativeConceptCandidateRepository(
+            self.session
+        )
+        self.creative_concept_selections = SqlAlchemyCreativeConceptSelectionRepository(
+            self.session
+        )
+        self.script_runs = SqlAlchemyScriptRunRepository(self.session)
+        self.script_versions = SqlAlchemyScriptVersionRepository(self.session)
+        self.creative_generation_operations = SqlAlchemyCreativeGenerationOperationRepository(
+            self.session
+        )
         self.audit_events = SqlAlchemyAuditEventRepository(self.session)
         return self
 

@@ -1,6 +1,6 @@
 # AI Video Preproduction Agent
 
-This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds explicit human accept/reject review for offline Structured Brief candidates. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
+This repository contains the executable foundation for an **AI video preproduction system**. The current milestone adds an explicit, human-controlled Creative Concept and Script loop on top of reviewed BriefVersions. It makes no real model call and does not parse PDF/DOCX/XLSX, perform OCR, fetch URLs, render, publish, or deliver video.
 
 ## Current capabilities
 
@@ -15,18 +15,25 @@ This repository contains the executable foundation for an **AI video preproducti
 - Immutable DocumentExtraction artifacts for strict UTF-8 plain text, bounded CSV and bounded/canonical JSON, with server-selected parser versions, source-integrity recheck, PostgreSQL idempotency and scoped reads.
 - Model-neutral offline Brief extraction with versioned instructions, a deterministic fake provider, strict canonical Schema validation, immutable Run/Attempt records and a mandatory human-review candidate boundary.
 - Tenant-scoped candidate reads plus explicit idempotent accept/reject review; accept creates a new draft BriefVersion through existing CAS and reject creates no Brief content.
+- Offline Creative Concept generation produces exactly three immutable, schema-validated candidates pinned to one BriefVersion; a separate human selection is required before one immutable draft ScriptVersion can be generated.
 - Ordered immutable SourceAssetVersion references on accepted Brief ingestion; the order and relation type are part of the canonical ingestion digest.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
 - Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 
-There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature. Candidate acceptance is always an explicit authorized human action.
+There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance or selection, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature. Candidate acceptance and concept selection are always explicit authorized human actions.
 
 ## Offline Brief extraction safety foundation
 
 Stage 9 consumes only an existing immutable DocumentExtraction. A versioned server-owned instruction requires one raw JSON object, disables tools/external actions and treats source text as untrusted data. Input is capped at 128,000 characters and output at 262,144 characters. Markdown wrappers, malformed/non-finite JSON, wrong schema versions and extra/invalid fields are classified as failed attempts.
 
 Only canonical Structured Brief v1 output becomes an immutable `human_review_required` candidate. Stage 10 exposes scoped candidate reads and explicit review endpoints. Accept creates Brief/version 1 or a CAS-protected successor draft; reject creates no BriefVersion. Neither path mutates candidate content, and an approved predecessor remains byte-for-byte and metadata-for-metadata unchanged. Full prompts, source text and raw model output are not persisted or audited; review audit stores bounded identifiers and outcomes only.
+
+## Offline Creative Concept and Script loop
+
+Stage 11 accepts a scoped draft BriefVersion as generation input and pins its canonical digest, provider/model identity, and server-owned instruction-template version. The deterministic fake provider must return exactly three canonical Creative Concept objects; malformed, unsafe, or schema-invalid output rolls back without a partial run, candidate, operation, or audit record. A human with mutation authority makes one immutable selection per concept run. Only that selected candidate can produce a canonical immutable ScriptVersion. Idempotency is scoped to Organization, Workspace, Project, operation, and key; a matching accepted request replays without a provider call or extra audit event.
+
+Neither raw prompts nor raw provider output is persisted or included in audit payloads. Concept, selection, script, and operation reads are tenant/project scoped and inaccessible resources share the same opaque 404 response. Scripts remain draft candidates: Stage 11 adds no script approval, editing, storyboard, shot plan, or media generation.
 
 ## Deterministic document extraction
 
@@ -212,4 +219,4 @@ The checked-in values are local test credentials only. Production requires an ex
 
 The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic parsing; ADR-040 through ADR-043 record the offline model/candidate boundary. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md), [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md), and [offline-ai-brief-extraction-plan.md](docs/development/plans/offline-ai-brief-extraction-plan.md).
 
-Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047. A real Provider evaluation still requires a new privacy, threat, cost and retention ADR first.
+Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop decisions are recorded by ADR-048 through ADR-052. A real Provider evaluation still requires a new privacy, threat, cost and retention ADR first.

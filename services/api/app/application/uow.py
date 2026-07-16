@@ -10,12 +10,18 @@ from services.api.app.application.repositories import (
     BriefIngestionSourceAssetRepository,
     BriefRepository,
     BriefVersionRepository,
+    CreativeConceptCandidateRepository,
+    CreativeConceptRunRepository,
+    CreativeConceptSelectionRepository,
+    CreativeGenerationOperationRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
     MembershipRepository,
     OrganizationRepository,
     ProjectRepository,
     RequirementIssueRepository,
+    ScriptRunRepository,
+    ScriptVersionRepository,
     SourceAssetOperationRepository,
     SourceAssetRepository,
     SourceAssetVersionRepository,
@@ -47,6 +53,12 @@ class UnitOfWork(Protocol):
     brief_extraction_runs: BriefExtractionRunRepository
     brief_extraction_attempts: BriefExtractionAttemptRepository
     brief_candidate_reviews: BriefCandidateReviewRepository
+    creative_concept_runs: CreativeConceptRunRepository
+    creative_concept_candidates: CreativeConceptCandidateRepository
+    creative_concept_selections: CreativeConceptSelectionRepository
+    script_runs: ScriptRunRepository
+    script_versions: ScriptVersionRepository
+    creative_generation_operations: CreativeGenerationOperationRepository
     audit_events: AuditEventRepository
 
     def __enter__(self) -> Self: ...
