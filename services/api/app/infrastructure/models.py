@@ -1366,6 +1366,107 @@ class BriefExtractionAttemptRecord(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class BriefCandidateReviewRecord(Base):
+    __tablename__ = "brief_candidate_reviews"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "brief_extraction_run_id",
+            name="uq_brief_candidate_review_run",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "action",
+            "idempotency_key",
+            name="uq_brief_candidate_review_idempotency",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_extraction_run_id"],
+            [
+                "brief_extraction_runs.organization_id",
+                "brief_extraction_runs.workspace_id",
+                "brief_extraction_runs.project_id",
+                "brief_extraction_runs.id",
+            ],
+            name="fk_brief_candidate_review_run_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id"],
+            [
+                "briefs.organization_id",
+                "briefs.workspace_id",
+                "briefs.project_id",
+                "briefs.id",
+            ],
+            name="fk_brief_candidate_review_brief_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id", "brief_version_id"],
+            [
+                "brief_versions.organization_id",
+                "brief_versions.workspace_id",
+                "brief_versions.project_id",
+                "brief_versions.brief_id",
+                "brief_versions.id",
+            ],
+            name="fk_brief_candidate_review_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("action IN ('accept', 'reject')", name="ck_brief_candidate_review_action"),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted', 'rejected')",
+            name="ck_brief_candidate_review_status",
+        ),
+        CheckConstraint(
+            "request_digest ~ '^[0-9a-f]{64}$' AND candidate_digest ~ '^[0-9a-f]{64}$' "
+            "AND (accepted_content_digest IS NULL OR accepted_content_digest ~ '^[0-9a-f]{64}$')",
+            name="ck_brief_candidate_review_digests",
+        ),
+        CheckConstraint(
+            "(status='reserved' AND completed_at IS NULL AND brief_id IS NULL "
+            "AND brief_version_id IS NULL AND rejection_reason IS NULL) OR "
+            "(status='accepted' AND action='accept' AND completed_at IS NOT NULL "
+            "AND brief_id IS NOT NULL AND brief_version_id IS NOT NULL "
+            "AND accepted_content_digest IS NOT NULL AND accepted_content_modified IS NOT NULL "
+            "AND rejection_reason IS NULL) OR "
+            "(status='rejected' AND action='reject' AND completed_at IS NOT NULL "
+            "AND brief_id IS NULL AND brief_version_id IS NULL "
+            "AND accepted_content_digest IS NULL AND accepted_content_modified IS NULL "
+            "AND rejection_reason IS NOT NULL)",
+            name="ck_brief_candidate_review_outcome",
+        ),
+        CheckConstraint("version >= 1", name="ck_brief_candidate_review_version"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    brief_extraction_run_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    action: Mapped[str] = mapped_column(String(12), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidate_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    accepted_content_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    accepted_content_modified: Mapped[bool | None] = mapped_column(nullable=True)
+    brief_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    brief_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rejection_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
 class AuditEventRecord(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
@@ -1384,7 +1485,8 @@ class AuditEventRecord(Base):
             "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
             "'source_asset.archived', 'source_object.uploaded', "
-            "'document_extraction.completed', 'brief_extraction.completed')",
+            "'document_extraction.completed', 'brief_extraction.completed', "
+            "'brief_candidate.accepted', 'brief_candidate.rejected')",
             name="ck_audit_action",
         ),
         Index(

@@ -12,6 +12,10 @@ from services.api.app.domain.brief import (
     RequirementIssueType,
 )
 from services.api.app.domain.brief_extraction import (
+    BriefCandidateRejectReason,
+    BriefCandidateReview,
+    BriefCandidateReviewAction,
+    BriefCandidateReviewStatus,
     BriefExtractionAttempt,
     BriefExtractionAttemptStatus,
     BriefExtractionRun,
@@ -92,6 +96,10 @@ __all__ = [
     "BriefExtractionAttemptStatus",
     "BriefExtractionRun",
     "BriefExtractionRunStatus",
+    "BriefCandidateRejectReason",
+    "BriefCandidateReview",
+    "BriefCandidateReviewAction",
+    "BriefCandidateReviewStatus",
     "DomainError",
     "DocumentExtraction",
     "DocumentExtractionOperation",

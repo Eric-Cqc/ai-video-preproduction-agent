@@ -13,11 +13,13 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
 from services.api.app.application.brief_services import BriefApplicationService
+from services.api.app.application.candidate_review_services import BriefCandidateReviewService
 from services.api.app.application.document_extraction_services import (
     DocumentExtractionApplicationService,
 )
 from services.api.app.application.errors import (
     ApplicationError,
+    PermissionDenied,
     ResourceConflict,
     ResourceNotFound,
     StorageUnavailable,
@@ -47,6 +49,7 @@ from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
 from services.api.app.presentation.brief_routes import router as brief_router
+from services.api.app.presentation.candidate_review_routes import router as candidate_review_router
 from services.api.app.presentation.document_extraction_routes import (
     router as document_extraction_router,
 )
@@ -108,6 +111,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_application_service = BriefApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    app.state.brief_candidate_review_service = BriefCandidateReviewService(
+        lambda: SqlAlchemyUnitOfWork(session_factory)
+    )
     app.state.ingestion_application_service = BriefIngestionApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -145,6 +151,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(tenant_router)
     app.include_router(brief_router)
+    app.include_router(candidate_review_router)
     app.include_router(ingestion_router)
     app.include_router(source_asset_router)
     app.include_router(source_object_router)
@@ -194,6 +201,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         status_code = 400
         if isinstance(error, ResourceNotFound):
             status_code = 404
+            return error_response(request, status_code, error.code, "resource is not accessible")
+        elif isinstance(error, PermissionDenied):
+            status_code = 403
         elif isinstance(error, ResourceConflict):
             status_code = 409
         elif isinstance(error, TemporaryIdentityDisabled):

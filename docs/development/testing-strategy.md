@@ -8,6 +8,8 @@ Ingestion tests 使用两个独立 PostgreSQL Session 与 Event/Barrier（不使
 
 SourceAsset tests 使用真实 PostgreSQL 约束覆盖 immutable Version ownership、accepted outcome、scoped operation uniqueness、cross-tenant/Project composite FK 和 attachment position/relation constraints。并发 tests 用独立 session 与 Barrier/Event、明确 timeout（不用 sleep）验证 create/version 同 key 只有一个 mutation/audit、rollback 后新的 reservation 可取得，以及无永久 `reserved`。API tests 覆盖 opaque IDOR、role、pagination、provenance/filename/checksum/size 边界和不泄露 operation internal fields。
 
+Candidate review tests 使用真实 PostgreSQL 覆盖 accept/reject 互斥、same-key replay、accept/reject race 和无永久 `reserved`。Rollback matrix 在首次 Brief 与 successor 两条路径分别注入 Brief/Version/Issue/pointer/finalize/Audit 失败，并比较真实行数、current pointer 与 aggregate version。API matrix 覆盖 owner/admin/member mutation、viewer 只读、统一 opaque 404 与非泄露响应；digest matrix 覆盖 run/Brief/CAS/content/reason/note，approved predecessor 通过 ORM mapper 的全部持久列快照验证不变。
+
 ## 根命令
 
 - `make test-domain`：无数据库领域规则。

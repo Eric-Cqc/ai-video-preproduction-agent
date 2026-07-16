@@ -14,6 +14,10 @@ class ResourceConflict(ApplicationError):
     code = "resource_conflict"
 
 
+class PermissionDenied(ApplicationError):
+    code = "permission_denied"
+
+
 class InvalidRequest(ApplicationError):
     code = "invalid_request"
 
