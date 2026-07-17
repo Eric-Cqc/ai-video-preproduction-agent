@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlparse
+from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -8,6 +9,7 @@ from sqlalchemy.engine import make_url
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_local"
 TEMPORARY_IDENTITY_ENVIRONMENTS = frozenset({"local", "test", "ci"})
+HOSTED_PILOT_ENVIRONMENTS = frozenset({"hosted", "hosted_test"})
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-v4-flash"
 
@@ -40,6 +42,16 @@ class ApiSettings(BaseSettings):
     deepseek_max_attempts: int = Field(default=2, ge=1, le=2)
     deepseek_max_input_bytes: int = Field(default=131_072, ge=1024, le=262_144)
     deepseek_max_output_bytes: int = Field(default=262_144, ge=1024, le=262_144)
+    pilot_access_password: str | None = Field(default=None, repr=False)
+    pilot_session_secret: str | None = Field(default=None, repr=False)
+    pilot_session_ttl_seconds: int = Field(default=28_800, ge=300, le=86_400)
+    pilot_organization_id: UUID | None = None
+    pilot_workspace_id: UUID | None = None
+    pilot_actor_subject: str | None = Field(default=None, min_length=1, max_length=200)
+    pilot_organization_slug: str = Field(default="pilot", min_length=1, max_length=100)
+    pilot_organization_name: str = Field(default="Private Pilot", min_length=1, max_length=200)
+    pilot_workspace_slug: str = Field(default="production", min_length=1, max_length=100)
+    pilot_workspace_name: str = Field(default="Production", min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def validate_database_configuration(self) -> "ApiSettings":
@@ -63,7 +75,8 @@ class ApiSettings(BaseSettings):
                 raise ValueError("DEEPSEEK_MODEL must be deepseek-v4-flash")
         if (
             self.source_object_storage_adapter == "local_filesystem_v1"
-            and self.app_environment not in TEMPORARY_IDENTITY_ENVIRONMENTS
+            and self.app_environment
+            not in TEMPORARY_IDENTITY_ENVIRONMENTS | HOSTED_PILOT_ENVIRONMENTS
         ):
             raise ValueError("local filesystem object storage is only allowed in local/test/ci")
         if self.database_url is None:
@@ -78,6 +91,19 @@ class ApiSettings(BaseSettings):
             raise ValueError("DATABASE_URL must name a database")
         if self.database_echo and self.app_environment not in {"local", "test"}:
             raise ValueError("DATABASE_ECHO is only allowed in local or test")
+        if self.hosted_pilot_enabled and any(
+            value is None
+            for value in (
+                self.pilot_access_password,
+                self.pilot_session_secret,
+                self.pilot_organization_id,
+                self.pilot_workspace_id,
+                self.pilot_actor_subject,
+            )
+        ):
+            raise ValueError("hosted pilot configuration is incomplete")
+        if self.hosted_pilot_enabled and len(self.pilot_session_secret or "") < 32:
+            raise ValueError("PILOT_SESSION_SECRET must contain at least 32 characters")
         return self
 
     @field_validator("api_allowed_cors_origins")
@@ -109,6 +135,10 @@ class ApiSettings(BaseSettings):
     @property
     def temporary_identity_headers_enabled(self) -> bool:
         return self.app_environment in TEMPORARY_IDENTITY_ENVIRONMENTS
+
+    @property
+    def hosted_pilot_enabled(self) -> bool:
+        return self.app_environment in HOSTED_PILOT_ENVIRONMENTS
 
 
 @lru_cache(maxsize=1)

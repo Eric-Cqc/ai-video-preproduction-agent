@@ -34,6 +34,11 @@ from services.api.app.application.model_provider import (
     DeterministicWorkflowProvider,
     ModelProviderPort,
 )
+from services.api.app.application.pilot_access import (
+    COOKIE_NAME,
+    FailedAccessLimiter,
+    session_is_valid,
+)
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
 )
@@ -68,6 +73,7 @@ from services.api.app.presentation.document_extraction_routes import (
     router as document_extraction_router,
 )
 from services.api.app.presentation.ingestion_routes import router as ingestion_router
+from services.api.app.presentation.pilot_access_routes import router as pilot_access_router
 from services.api.app.presentation.review_revision_delivery_routes import (
     router as review_revision_delivery_router,
 )
@@ -123,6 +129,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.state.pilot_access_limiter = FailedAccessLimiter()
     app.state.tenant_application_service = TenantApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
@@ -199,6 +206,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         ],
     )
     app.include_router(health_router)
+    app.include_router(pilot_access_router)
     app.include_router(tenant_router)
     app.include_router(brief_router)
     app.include_router(brief_extraction_router)
@@ -220,6 +228,16 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             raw_correlation_id
         ):
             return error_response(request, 400, "invalid_correlation_id", "Invalid request")
+        if (
+            resolved_settings.hosted_pilot_enabled
+            and request.url.path.startswith("/api/v1")
+            and request.url.path
+            not in {"/api/v1/health", "/api/v1/pilot-access", "/api/v1/pilot-access/logout"}
+            and not session_is_valid(
+                request.cookies.get(COOKIE_NAME), resolved_settings.pilot_session_secret or ""
+            )
+        ):
+            return error_response(request, 401, "pilot_access_required", "Pilot access is required")
         if not resolved_settings.temporary_identity_headers_enabled and any(
             header in request.headers for header in TEMPORARY_IDENTITY_HEADERS
         ):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { HealthResult } from "../lib/api/health-client";
 import {
@@ -152,6 +152,7 @@ export function FoundationStatus({
   api,
   apiBaseUrl,
 }: FoundationStatusProps) {
+  const hostedPilot = environment === "hosted" || environment === "hosted_test";
   const [context, setContext] =
     useState<LocalWorkspaceContext>(loadStoredContext);
   const [projects, setProjects] = useState<readonly Project[]>([]);
@@ -167,14 +168,60 @@ export function FoundationStatus({
     downloadUrl: string;
     filename: string;
   } | null>(null);
+  const [pilotPassword, setPilotPassword] = useState("");
+  const [pilotReady, setPilotReady] = useState(!hostedPilot);
   const client = useMemo(
-    () => createProductClient(apiBaseUrl, context),
-    [apiBaseUrl, context],
+    () => createProductClient(apiBaseUrl, context, fetch, !hostedPilot),
+    [apiBaseUrl, context, hostedPilot],
   );
 
   useEffect(() => {
     window.localStorage.setItem(contextStorageKey, JSON.stringify(context));
   }, [context]);
+
+  const loadPilotContext = useCallback(async () => {
+    const response = await fetch(new URL("/api/v1/pilot-context", apiBaseUrl), {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("pilot access required");
+    const value = (await response.json()) as {
+      actor_subject: string;
+      organization_id: string;
+      workspace_id: string;
+    };
+    setContext({
+      actorSubject: value.actor_subject,
+      organizationId: value.organization_id,
+      workspaceId: value.workspace_id,
+    });
+    setPilotReady(true);
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!hostedPilot) return;
+    const timer = window.setTimeout(() => {
+      void loadPilotContext().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hostedPilot, loadPilotContext]);
+
+  async function grantPilotAccess(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch(new URL("/api/v1/pilot-access", apiBaseUrl), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: pilotPassword }),
+    });
+    if (!response.ok) {
+      setNotice(response.status === 429 ? "请稍后再试。" : "访问凭据无效。");
+      return;
+    }
+    setPilotPassword("");
+    await loadPilotContext();
+    setNotice("已进入私有试点工作台。");
+  }
 
   async function loadProjects() {
     if (
@@ -275,10 +322,31 @@ export function FoundationStatus({
       <div className="workspace-grid" id="workspace">
         <aside className="left-panel">
           <StageRail active={selected ? "Intake" : "Intake"} />
-          <ContextForm value={context} onChange={setContext} />
+          {hostedPilot ? null : (
+            <ContextForm value={context} onChange={setContext} />
+          )}
         </aside>
 
         <section className="main-panel" aria-labelledby="desk-title">
+          {hostedPilot && !pilotReady ? (
+            <form
+              className="project-form"
+              onSubmit={(event) => void grantPilotAccess(event)}
+            >
+              <label>
+                私有试点访问凭据
+                <input
+                  type="password"
+                  value={pilotPassword}
+                  onChange={(event) => setPilotPassword(event.target.value)}
+                  autoComplete="current-password"
+                />
+              </label>
+              <button className="button" type="submit">
+                进入试点
+              </button>
+            </form>
+          ) : null}
           <div className="section-heading">
             <div>
               <p className="eyebrow">Projects home</p>
@@ -287,7 +355,7 @@ export function FoundationStatus({
             <button
               className="button secondary"
               type="button"
-              disabled={busy}
+              disabled={busy || !pilotReady}
               onClick={() => void loadProjects()}
             >
               {busy ? "处理中…" : "刷新项目"}
@@ -317,7 +385,11 @@ export function FoundationStatus({
                 placeholder="目标、受众或交付背景"
               />
             </label>
-            <button className="button" type="submit" disabled={busy}>
+            <button
+              className="button"
+              type="submit"
+              disabled={busy || !pilotReady}
+            >
               创建项目
             </button>
           </form>
