@@ -1,11 +1,15 @@
 """Explicit in-memory Structured Brief smoke; never prints sensitive content."""
 
+import logging
 import os
 
 from services.api.app.application.brief_extraction_services import (
     PROMPT_INSTRUCTIONS,
     PROMPT_TEMPLATE_ID,
     PROMPT_TEMPLATE_VERSION,
+    SchemaDiagnostic,
+    StructuredBriefSchemaInvalid,
+    StructuredBriefSemanticInvalid,
     validate_structured_brief_provider_output,
 )
 from services.api.app.application.errors import InvalidRequest
@@ -30,6 +34,22 @@ LIVE_SMOKE_MAX_OUTPUT_BYTES = 4096
 
 class SmokeFailure(RuntimeError):
     """A bounded category suitable for terminal output."""
+
+    def __init__(
+        self,
+        category: str,
+        *,
+        schema_diagnostics: tuple[SchemaDiagnostic, ...] = (),
+        schema_issue_count: int = 0,
+        schema_truncated: bool = False,
+        semantic_issue_codes: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(category)
+        self.category = category
+        self.schema_diagnostics = schema_diagnostics
+        self.schema_issue_count = schema_issue_count
+        self.schema_truncated = schema_truncated
+        self.semantic_issue_codes = semantic_issue_codes
 
 
 def run_structured_brief_smoke(provider: ModelProviderPort) -> dict[str, int | str]:
@@ -56,6 +76,15 @@ def run_structured_brief_smoke(provider: ModelProviderPort) -> dict[str, int | s
         validate_structured_brief_provider_output(
             outcome.output_text, require_no_blocking_issues=True
         )
+    except StructuredBriefSchemaInvalid as error:
+        raise SmokeFailure(
+            "schema_invalid",
+            schema_diagnostics=error.diagnostics.issues,
+            schema_issue_count=error.diagnostics.total_count,
+            schema_truncated=error.diagnostics.truncated,
+        ) from None
+    except StructuredBriefSemanticInvalid as error:
+        raise SmokeFailure("semantic_invalid", semantic_issue_codes=error.issue_codes) from None
     except InvalidRequest as error:
         raise SmokeFailure(error.code) from None
     return {
@@ -95,6 +124,7 @@ def main() -> None:
     settings = ApiSettings()
     if settings.model_provider != "deepseek" or not settings.deepseek_api_key:
         raise SystemExit("set MODEL_PROVIDER=deepseek and DEEPSEEK_API_KEY before live smoke")
+    _suppress_transport_info_logs()
     provider = DeepSeekProvider(
         api_key=settings.deepseek_api_key,
         timeout_seconds=settings.deepseek_timeout_seconds,
@@ -105,9 +135,42 @@ def main() -> None:
     try:
         summary = run_structured_brief_smoke(provider)
     except SmokeFailure as error:
-        raise SystemExit(f"provider live smoke failed safely: {error}") from None
+        _print_safe_failure(error)
+        raise SystemExit(1) from None
     for label, value in summary.items():
         print(f"{label.replace('_', ' ').title()}: {value}")
+
+
+def _suppress_transport_info_logs() -> None:
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+
+def _print_safe_failure(error: SmokeFailure) -> None:
+    print(f"Provider live smoke failed safely: {error.category}")
+    if error.category == "schema_invalid":
+        print("Schema Validation: failed")
+        print(f"Schema Issue Count: {error.schema_issue_count}")
+        for index, issue in enumerate(error.schema_diagnostics, start=1):
+            _print_schema_diagnostic(index, issue)
+        if error.schema_truncated:
+            print("Schema Issues Truncated: true")
+    if error.category == "semantic_invalid":
+        print("Semantic Validation: failed")
+        print(f"Semantic Issue Count: {len(error.semantic_issue_codes)}")
+        for index, issue_code in enumerate(error.semantic_issue_codes[:8], start=1):
+            print(f"Semantic Issue {index}: code={issue_code}")
+
+
+def _print_schema_diagnostic(index: int, issue: SchemaDiagnostic) -> None:
+    parts = [f"Schema Issue {index}: path={issue.path}", f"category={issue.category}"]
+    if issue.missing_property is not None:
+        parts.append(f"missing={issue.missing_property}")
+    if issue.expected_type is not None:
+        parts.append(f"expected={issue.expected_type}")
+    if issue.allowed_values:
+        parts.append(f"allowed={','.join(issue.allowed_values)}")
+    print(" ".join(parts))
 
 
 if __name__ == "__main__":

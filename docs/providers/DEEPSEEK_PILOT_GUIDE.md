@@ -25,3 +25,12 @@ browsing instructions. Validation is in memory only: it creates no application a
 database record, audit event, or storage object, and it displays neither the prompt nor the raw
 response. Successful output is limited to provider/model, validation status, and bounded usage
 metadata. Hosted deployment, authentication and cloud storage are not part of this pilot.
+
+JSON-object mode guarantees JSON syntax, not conformance to the application Structured Brief
+Schema. The server-owned Structured Brief prompt therefore includes a small fictional valid
+example, while the production Schema and semantic validator remain authoritative. A
+`schema_invalid` smoke result is not retried or persisted. Its bounded diagnostics expose only
+Schema paths, validator categories, public required names, primitive types, and public enums;
+generated values, raw output, validation exception text, and prompts remain hidden. Semantic
+diagnostics likewise contain only bounded production issue codes. Run a second paid live smoke
+only after the offline gates pass; it has not yet established real-Provider acceptance.
