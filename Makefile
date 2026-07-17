@@ -14,7 +14,7 @@ RC_WEB_PORT ?= 13000
 -include .env
 export
 
-.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check rc-up rc-seed rc-smoke rc-check rc-down demo-smoke
+.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check rc-up rc-seed rc-smoke rc-check rc-down demo-smoke provider-live-smoke
 
 setup:
 	$(NODE_RUNNER) npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund
@@ -121,6 +121,9 @@ rc-smoke:
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) $(UV_RUN) pytest -q services/api/tests/test_rc_golden_path.py
 
 demo-smoke: rc-smoke
+
+provider-live-smoke:
+	$(UV_RUN) python -m infra.scripts.provider_live_smoke
 
 rc-check: db-up db-upgrade build db-current rc-smoke
 	@set -e; \

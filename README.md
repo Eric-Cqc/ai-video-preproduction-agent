@@ -22,7 +22,12 @@ This repository contains a local release candidate for an **AI video preproducti
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 - Tenant-scoped human review, immutable revision successors, and deterministic JSON/CSV/ZIP delivery exports pinned to an approved planning bundle.
 
-There is no cloud object storage, MIME sniffing, PDF/DOCX/XLSX rich parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance or selection, media generation, authentication Provider, production queue, billing, cloud deployment, or customer collaboration feature. Candidate acceptance and concept selection are always explicit authorized human actions.
+There is no cloud object storage, MIME sniffing, PDF/DOCX/XLSX rich parsing, OCR, URL retrieval,
+Provider SDK, automatic candidate acceptance or selection, media generation, authentication
+Provider, production queue, billing, cloud deployment, or customer collaboration feature. Candidate
+acceptance and concept selection are always explicit authorized human actions. ADR-064 permits one
+opt-in, server-side DeepSeek `deepseek-v4-flash` pilot adapter; deterministic offline providers
+remain the default for the Local RC, CI and tests.
 
 ## Interactive Golden Path and local RC
 

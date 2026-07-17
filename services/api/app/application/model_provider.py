@@ -3,6 +3,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
+import httpx
+
+DEEPSEEK_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_PROVIDER_ID = "deepseek"
+DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
+SAFE_USER_AGENT = "ai-video-preproduction-agent/0.1"
+
 
 class ProviderOutcomeStatus(StrEnum):
     SUCCESS = "success"
@@ -25,6 +32,9 @@ class ModelRequest:
 class ProviderOutcome:
     status: ProviderOutcomeStatus
     output_text: str | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
 
 
 class ModelProviderPort(Protocol):
@@ -32,6 +42,106 @@ class ModelProviderPort(Protocol):
     model_id: str
 
     def complete(self, request: ModelRequest) -> ProviderOutcome: ...
+
+
+class DeepSeekProvider:
+    """Narrow server-only adapter for the approved DeepSeek JSON endpoint."""
+
+    provider_id = DEEPSEEK_PROVIDER_ID
+    model_id = DEEPSEEK_MODEL_ID
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        timeout_seconds: float,
+        max_attempts: int,
+        max_input_bytes: int,
+        max_output_bytes: int,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("DeepSeek API key is required")
+        self._api_key = api_key
+        self._max_attempts = max_attempts
+        self._max_input_bytes = max_input_bytes
+        self._max_output_bytes = max_output_bytes
+        self._client = httpx.Client(
+            transport=transport,
+            timeout=httpx.Timeout(timeout_seconds, connect=timeout_seconds),
+            follow_redirects=False,
+            trust_env=False,
+            headers={"Authorization": f"Bearer {api_key}", "User-Agent": SAFE_USER_AGENT},
+        )
+
+    def complete(self, request: ModelRequest) -> ProviderOutcome:
+        if request.allow_tools or len(request.input_text.encode()) > self._max_input_bytes:
+            return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+        payload = {
+            "model": self.model_id,
+            "response_format": {"type": "json_object"},
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": request.instructions},
+                {
+                    "role": "user",
+                    "content": "UNTRUSTED_INPUT_BEGIN\n"
+                    + request.input_text
+                    + "\nUNTRUSTED_INPUT_END",
+                },
+            ],
+        }
+        for attempt in range(self._max_attempts):
+            try:
+                response = self._client.post(DEEPSEEK_COMPLETIONS_URL, json=payload)
+            except httpx.TimeoutException:
+                if attempt + 1 < self._max_attempts:
+                    continue
+                return ProviderOutcome(ProviderOutcomeStatus.TIMEOUT)
+            except httpx.TransportError:
+                if attempt + 1 < self._max_attempts:
+                    continue
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            if response.status_code in {408, 429} or 500 <= response.status_code <= 599:
+                if attempt + 1 < self._max_attempts:
+                    continue
+                return ProviderOutcome(
+                    ProviderOutcomeStatus.TIMEOUT
+                    if response.status_code == 408
+                    else ProviderOutcomeStatus.ERROR
+                )
+            if response.status_code in {401, 403}:
+                return ProviderOutcome(ProviderOutcomeStatus.REFUSAL)
+            if response.status_code < 200 or response.status_code >= 300:
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            if len(response.content) > self._max_output_bytes:
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            try:
+                body = response.json()
+                choices = body["choices"]
+                message = choices[0]["message"]
+                content = message["content"]
+                usage = body.get("usage", {})
+                if not isinstance(content, str):
+                    raise ValueError
+                return ProviderOutcome(
+                    ProviderOutcomeStatus.SUCCESS,
+                    content,
+                    _bounded_usage(usage.get("prompt_tokens")),
+                    _bounded_usage(usage.get("completion_tokens")),
+                    _bounded_usage(usage.get("total_tokens")),
+                )
+            except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+        return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+
+
+def _bounded_usage(value: object) -> int | None:
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10_000_000
+        else None
+    )
 
 
 class DeterministicFakeProvider:

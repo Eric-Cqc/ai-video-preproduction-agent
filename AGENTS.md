@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-第1–19阶段已完成并合并到 `main`。当前交付物是本地 Release Candidate：本地 customer-facing UI、typed API client、确定性 demo、accessibility、health/readiness、provider conformance boundary、release 文档与本地 RC；所有产物必须 tenant-aware、可审计且保持不可变 lineage。继续禁止：真实模型 Provider、Provider SDK/凭据、网络、tool use、URL 抓取、图片或视频生成、媒体渲染、Job/queue、云对象存储、秘密信息与第二十阶段推测性范围。阶段决定见 `docs/adr/ADR-017` 至 `ADR-063`。
+第1–19阶段已完成并合并到 `main`。Hosted Pilot Phase 1 仅授权通过 ADR-064 的服务器端 DeepSeek `deepseek-v4-flash` Adapter；默认、测试与 CI 仍使用确定性离线 Provider。除该精确 Adapter 外，继续禁止真实 Provider/SDK、浏览器 Provider 访问、tool use、URL 抓取、图片或视频生成、媒体渲染、Job/queue、云对象存储、认证、部署与第二十阶段推测性范围。所有产物必须 tenant-aware、可审计且保持不可变 lineage。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 
