@@ -5,12 +5,14 @@ Generated: 2026-07-17 Asia/Hong_Kong.
 ## Repository state
 
 - Repository: `ai-video-preproduction-agent`
-- Branch: `feat/productization-epic`
+- Branch: `main`
 - Base: `cbdfb49`
-- HEAD: `eedd194`
+- Merge commit / current HEAD: `7890bcb`
+- Productization feature HEAD: `893fedf`
+- Final documentation reconciliation commit: `893fedf`
 - Alembic migration head: `a1b2c3d4e5f6`
 - Working tree at handoff: clean
-- Remote actions: no push and no PR created for the productization branch
+- Merge status: productization was merged through PR #11; no further branch push or PR is pending
 
 The historical Source Asset handoff is archived at
 [source-asset-handoff.md](archive/source-asset-handoff.md). It is historical context only and
@@ -25,6 +27,7 @@ contains no current instructions.
 5. `8199b61 feat: complete interactive golden path`
 6. `9180b4f chore: prepare local release candidate`
 7. `eedd194 chore: complete whole-repository release audit`
+8. `893fedf docs: reconcile productization release state`
 
 ## Current product capability
 
@@ -85,12 +88,10 @@ volumes.
 
 ## Next actions
 
-Only release collaboration remains:
+Only post-merge product review and future product decisions remain:
 
 1. Perform a manual local product experience pass.
-2. Push `feat/productization-epic` when authorized.
-3. Create a pull request.
-4. Let CI and code review validate the branch before merge.
+2. Use a new ADR and explicit approval before any future production-capability decision.
 
 Do not resume Stage 13, the historical Source Asset Milestone D, or speculative Stage 20 work from
 this handoff.
