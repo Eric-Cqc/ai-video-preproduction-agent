@@ -4,7 +4,7 @@ This repository contains a local release candidate for an **AI video preproducti
 
 ## Current capabilities
 
-- Next.js foundation status page and canonical cross-language health contract.
+- Next.js Production Desk with a tenant-aware interactive Golden Path and canonical cross-language health contract.
 - FastAPI health plus Organization, Workspace, Membership, Project and versioned Brief foundation endpoints.
 - PostgreSQL 17 schema managed by Alembic, with composite tenant constraints and partial membership indexes.
 - Tenant-scoped repositories, one application Unit of Work, atomic mutation/audit writes, and Project optimistic concurrency.
@@ -22,7 +22,33 @@ This repository contains a local release candidate for an **AI video preproducti
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 - Tenant-scoped human review, immutable revision successors, and deterministic JSON/CSV/ZIP delivery exports pinned to an approved planning bundle.
 
-There is no multipart/direct-browser upload, cloud object storage, MIME sniffing, PDF/DOCX/XLSX parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance or selection, media generation, authentication Provider, production queue, billing, product UI, cloud deployment, or customer collaboration feature. Candidate acceptance and concept selection are always explicit authorized human actions.
+There is no cloud object storage, MIME sniffing, PDF/DOCX/XLSX rich parsing, OCR, URL retrieval, real AI/LLM/model call, Provider SDK/credential, Prompt compilation, automatic candidate acceptance or selection, media generation, authentication Provider, production queue, billing, cloud deployment, or customer collaboration feature. Candidate acceptance and concept selection are always explicit authorized human actions.
+
+## Interactive Golden Path and local RC
+
+The current Production Desk and RC exercise the real tenant-aware HTTP application path:
+
+```text
+Project → Upload → Parse → Brief → Concepts → Script → Storyboard → Shot Plan
+→ Review → Delivery → ZIP
+```
+
+Use the supported local release-candidate commands:
+
+```sh
+make rc-up
+make rc-seed
+make rc-smoke
+make rc-check
+make rc-down
+make demo-smoke
+```
+
+`rc-seed` creates only the minimum repeatable local Organization/Workspace context. `rc-smoke`
+uses real routes, services, repositories, Unit of Work, PostgreSQL, local storage and deterministic
+offline providers; it verifies replay/conflict behavior, exact approved lineage, permissions,
+server-generated ZIP contents and checksum. See
+[LOCAL_QUICKSTART.md](docs/release/LOCAL_QUICKSTART.md).
 
 ## Offline Brief extraction safety foundation
 
@@ -36,7 +62,7 @@ Stage 11 accepts a scoped draft BriefVersion as generation input and pins its ca
 
 Neither raw prompts nor raw provider output is persisted or included in audit payloads. Concept, selection, script, and operation reads are tenant/project scoped and inaccessible resources share the same opaque 404 response. Scripts remain draft candidates: Stage 11 adds no script approval, editing, storyboard, shot plan, or media generation.
 
-## Stage 13 review, revision and delivery loop
+## Stage 13 review, revision and delivery loop (historical stage boundary)
 
 Human review records an immutable approval, rejection or revision request for
 an exact ScriptVersion, StoryboardVersion, ShotPlanVersion or complete planning
@@ -240,14 +266,14 @@ The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AG
 
 Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop decisions are recorded by ADR-048 through ADR-052. A real Provider evaluation still requires a new privacy, threat, cost and retention ADR first.
 
-Stage 12 Storyboard/Shot Plan decisions are recorded by ADR-053 through ADR-057.
+The following describes the historical Stage 12 boundary, not the current product state. Stage 12 Storyboard/Shot Plan decisions are recorded by ADR-053 through ADR-057.
 The workflow stores immutable structured planning artifacts pinned to complete
 Brief/Concept/Selection/Script lineage and uses only the deterministic offline
 fixture provider. It has no real model SDK, network, image/video generation,
 media rendering, background job, editable board or UI scope. See
 [storyboard-shot-plan.md](docs/development/plans/storyboard-shot-plan.md).
 
-Stage 13 review, revision and delivery decisions are recorded by ADR-058
+The following describes the historical Stage 13 boundary, not the current product state. Stage 13 review, revision and delivery decisions are recorded by ADR-058
 through ADR-063. The implementation plan is
 [review-revision-delivery-plan.md](docs/development/plans/review-revision-delivery-plan.md).
 The workflow remains offline-only and does not introduce real providers,
