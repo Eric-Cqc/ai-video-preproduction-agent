@@ -9,6 +9,7 @@ export default async function HomePage() {
     <FoundationStatus
       environment={environment.applicationEnvironment}
       api={api}
+      apiBaseUrl={environment.apiBaseUrl.toString()}
     />
   );
 }

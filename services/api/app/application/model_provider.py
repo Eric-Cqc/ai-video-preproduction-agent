@@ -47,6 +47,75 @@ class DeterministicFakeProvider:
         return self.outcome
 
 
+class DeterministicWorkflowProvider:
+    """Local-only provider supporting the complete structured fixture workflow."""
+
+    provider_id = "fixture_workflow"
+    model_id = "fixture-workflow-v1"
+
+    def complete(self, request: ModelRequest) -> ProviderOutcome:
+        if request.allow_tools:
+            return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+        if request.instruction_template_id == "structured_brief_from_extraction":
+            return ProviderOutcome(ProviderOutcomeStatus.SUCCESS, request.input_text)
+        if request.instruction_template_id == "creative_concepts_from_brief":
+            concept = {
+                "schema_version": "1.0.0",
+                "title": "Everyday clarity",
+                "one_line_idea": "A simple daily moment becomes clearer.",
+                "strategic_rationale": "Connect the benefit to a familiar use case.",
+                "target_audience_insight": "Busy audiences value confidence.",
+                "emotional_tone": "Warm and assured",
+                "visual_world": "Natural light and uncluttered spaces",
+                "narrative_arc": "Problem, clarity, confident action",
+                "key_message": "Make the next choice easier.",
+                "channel_fit": ["social"],
+                "risks": [],
+                "assumptions": [],
+            }
+            concepts = [dict(concept, title=f"Everyday clarity {index}") for index in range(1, 4)]
+            return ProviderOutcome(
+                ProviderOutcomeStatus.SUCCESS,
+                json.dumps(concepts, sort_keys=True, separators=(",", ":")),
+            )
+        if request.instruction_template_id == "script_from_selected_concept":
+            script = {
+                "schema_version": "1.0.0",
+                "title": "Everyday clarity",
+                "logline": "One clear choice changes a day.",
+                "target_duration_seconds": 10,
+                "language": "en",
+                "format": "social",
+                "sections": ["opening"],
+                "scenes": [
+                    {
+                        "scene_number": 1,
+                        "purpose": "Introduce the moment",
+                        "estimated_duration_seconds": 10,
+                        "setting": "Home",
+                        "action": "A person pauses",
+                        "voiceover": "Choose clarity.",
+                        "dialogue": "",
+                        "on_screen_text": "Clarity",
+                        "transition": "cut",
+                    }
+                ],
+                "voiceover": "Choose clarity.",
+                "dialogue": "",
+                "on_screen_text": ["Clarity"],
+                "music_direction": "Warm",
+                "sound_direction": "Soft",
+                "call_to_action": "Learn more",
+                "compliance_notes": [],
+                "unresolved_assumptions": [],
+            }
+            return ProviderOutcome(
+                ProviderOutcomeStatus.SUCCESS,
+                json.dumps(script, sort_keys=True, separators=(",", ":")),
+            )
+        return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+
+
 STORYBOARD_PROVIDER_MODES = frozenset(
     {
         "valid",

@@ -8,11 +8,13 @@ PYTHONPATH := $(CURDIR):$(CURDIR)/packages/contracts/python:$(CURDIR)/packages/m
 DATABASE_URL ?= postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_local
 TEST_DATABASE_URL ?= postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_test
 DB_COMPOSE := docker compose --project-name ai-video-preproduction-agent --file infra/docker/compose.postgres.yml
+RC_API_PORT ?= 18000
+RC_WEB_PORT ?= 13000
 
 -include .env
 export
 
-.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check
+.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check rc-up rc-seed rc-smoke rc-check rc-down demo-smoke
 
 setup:
 	$(NODE_RUNNER) npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund
@@ -99,3 +101,36 @@ build:
 	$(UV_RUN) python -m compileall -q services packages/contracts/python packages/model-registry
 
 check: db-check format-check lint typecheck test contract-check build
+
+rc-up: db-up db-upgrade
+	API_BASE_URL=http://127.0.0.1:$(RC_API_PORT) $(MAKE) build
+	@mkdir -p .local/rc; \
+	if ! test -f .local/rc/api.pid || ! kill -0 $$(cat .local/rc/api.pid) 2>/dev/null; then \
+	  nohup $(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port $(RC_API_PORT) >.local/rc/api.log 2>&1 & echo $$! >.local/rc/api.pid; \
+	fi; \
+	if ! test -f .local/rc/web.pid || ! kill -0 $$(cat .local/rc/web.pid) 2>/dev/null; then \
+	  WEB_PORT=$(RC_WEB_PORT) nohup $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/web.log 2>&1 & echo $$! >.local/rc/web.pid; \
+	fi; \
+	ready=0; for attempt in $$(seq 1 30); do if curl --fail --silent http://127.0.0.1:$(RC_API_PORT)/api/v1/health | grep -q '"service":"foundation-api"' && curl --fail --silent http://127.0.0.1:$(RC_WEB_PORT) >/dev/null; then ready=1; break; fi; sleep 1; done; \
+	test $$ready -eq 1
+
+rc-seed:
+	APP_ENVIRONMENT=local API_BASE_URL=http://127.0.0.1:$(RC_API_PORT) $(UV_RUN) python -m infra.scripts.rc_seed
+
+rc-smoke:
+	TEST_DATABASE_URL=$(TEST_DATABASE_URL) $(UV_RUN) pytest -q services/api/tests/test_rc_golden_path.py
+
+demo-smoke: rc-smoke
+
+rc-check: db-up db-upgrade build db-current rc-smoke
+	@set -e; \
+	$(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port 18001 >.local/rc/check-api.log 2>&1 & api_pid=$$!; \
+	WEB_PORT=13001 API_BASE_URL=http://127.0.0.1:18001 $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/check-web.log 2>&1 & web_pid=$$!; \
+	trap 'kill $$api_pid $$web_pid 2>/dev/null || true' EXIT INT TERM; \
+	ready=0; for attempt in $$(seq 1 30); do if curl --fail --silent http://127.0.0.1:18001/api/v1/health | grep -q '"service":"foundation-api"' && curl --fail --silent http://127.0.0.1:13001 >/dev/null; then ready=1; break; fi; sleep 1; done; \
+	test $$ready -eq 1; \
+	test -w .local/source-objects || mkdir -p .local/source-objects
+
+rc-down:
+	@for service in api web; do if test -f .local/rc/$$service.pid; then kill $$(cat .local/rc/$$service.pid) 2>/dev/null || true; rm -f .local/rc/$$service.pid; fi; done
+	$(MAKE) db-down

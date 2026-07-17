@@ -11,14 +11,14 @@ describe("FoundationStatus", () => {
       <FoundationStatus
         environment="test"
         api={{ state: "available", health: parseHealthResponse(validHealth) }}
+        apiBaseUrl="http://api.test"
       />,
     );
     expect(
-      screen.getByRole("heading", { name: "AI Video Preproduction Agent" }),
+      screen.getByRole("heading", { name: "Production Desk" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Connected")).toBeInTheDocument();
-    expect(screen.getByText("foundation-api")).toBeInTheDocument();
-    expect(screen.getByText("1.0.0")).toBeInTheDocument();
+    expect(screen.getByText(/本地 API 已连接/)).toBeInTheDocument();
+    expect(screen.getByText("制作项目")).toBeInTheDocument();
   });
 
   it("shows a clear API error state", () => {
@@ -26,9 +26,9 @@ describe("FoundationStatus", () => {
       <FoundationStatus
         environment="test"
         api={{ state: "unavailable", message: "API is unavailable" }}
+        apiBaseUrl="http://api.test"
       />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("Unavailable");
-    expect(screen.getByRole("alert")).toHaveTextContent("API is unavailable");
+    expect(screen.getByText("本地 API 未连接")).toBeInTheDocument();
   });
 });

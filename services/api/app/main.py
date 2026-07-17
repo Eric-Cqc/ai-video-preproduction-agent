@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from services.api.app.application.brief_extraction_services import StructuredBriefExtractionService
 from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.candidate_review_services import BriefCandidateReviewService
 from services.api.app.application.creative_services import CreativeApplicationService
@@ -28,10 +29,8 @@ from services.api.app.application.errors import (
 )
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.model_provider import (
-    DeterministicFakeProvider,
     DeterministicVisualPlanningProvider,
-    ProviderOutcome,
-    ProviderOutcomeStatus,
+    DeterministicWorkflowProvider,
 )
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
@@ -59,6 +58,7 @@ from services.api.app.infrastructure.database import create_database_engine, cre
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.logging import configure_logging
 from services.api.app.metadata import SERVICE_NAME, SERVICE_VERSION
+from services.api.app.presentation.brief_extraction_routes import router as brief_extraction_router
 from services.api.app.presentation.brief_routes import router as brief_router
 from services.api.app.presentation.candidate_review_routes import router as candidate_review_router
 from services.api.app.presentation.creative_routes import router as creative_router
@@ -130,9 +130,13 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_candidate_review_service = BriefCandidateReviewService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
+    workflow_provider = DeterministicWorkflowProvider()
+    app.state.brief_extraction_service = StructuredBriefExtractionService(
+        lambda: SqlAlchemyUnitOfWork(session_factory), workflow_provider
+    )
     app.state.creative_application_service = CreativeApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory),
-        DeterministicFakeProvider(ProviderOutcome(ProviderOutcomeStatus.ERROR)),
+        workflow_provider,
     )
     visual_planning_service = VisualPlanningApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory), DeterministicVisualPlanningProvider()
@@ -180,6 +184,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(tenant_router)
     app.include_router(brief_router)
+    app.include_router(brief_extraction_router)
     app.include_router(candidate_review_router)
     app.include_router(creative_router)
     app.include_router(ingestion_router)
