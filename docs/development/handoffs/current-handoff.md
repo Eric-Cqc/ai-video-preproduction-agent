@@ -79,12 +79,19 @@ volumes.
 
 ## Current boundaries and limitations
 
-- Providers are deterministic and offline only; there is no real AI Provider or Provider SDK.
+- Deterministic offline providers remain the default. ADR-064 permits only an opt-in server-side
+  DeepSeek `deepseek-v4-flash` adapter; it has no SDK and is excluded from CI and ordinary tests.
 - The release candidate is local only; there is no cloud deployment or cloud object storage.
 - There are no jobs, queues, image generation, video generation or media rendering capabilities.
 - Temporary local tenant headers are development context, not production authentication.
 - The dependency-owned Starlette TestClient deprecation warning remains because resolving it
   requires a prohibited dependency and lockfile change.
+
+## Hosted Pilot Phase 1
+
+`feat/hosted-pilot-real-provider` is the authorized local-only DeepSeek pilot. Provider keys,
+full prompts, raw responses and customer source bodies do not enter persistence, audit, logs or the
+browser. Live smoke is explicit, cost-bearing and excluded from `make check`.
 
 ## Next actions
 

@@ -4,7 +4,7 @@
 
 本项目是 **AI 视频前期制作系统**：把创意简报转化为可审查、可版本化、可交接的制作蓝图（故事、脚本、镜头、资产、预算/排期假设与导出包）。它帮助人作决定和组织生产，**不是自动成片、渲染、剪辑、发布或投放平台**。
 
-第1–19阶段已建立并合并完整不可变制作 lineage；当前 `main` 包含产品界面、真实交互 Golden Path、typed API client、确定性 demo、可靠性/安全/无障碍加固、provider readiness boundary、local release candidate 与全仓终审。仍不得接入真实模型、SDK、凭据、网络、图片/视频生成、媒体渲染、云资源、复杂 Job/queue、自动成片或第20阶段范围。阶段决定由 [ADR-017 至 ADR-063](docs/adr/) 追加记录。
+第1–19阶段已建立并合并完整不可变制作 lineage；当前 `main` 包含本地 Release Candidate。ADR-064 仅授权可选的服务器端 DeepSeek `deepseek-v4-flash` Adapter，且确定性离线 Provider 仍是默认、CI 与测试边界。不得接入其他模型/SDK、浏览器 Provider 访问、图片/视频生成、媒体渲染、云资源、认证、复杂 Job/queue、自动成片、部署或第20阶段范围。
 
 ## 冻结的基础决定
 

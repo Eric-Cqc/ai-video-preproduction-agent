@@ -29,8 +29,10 @@ from services.api.app.application.errors import (
 )
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.model_provider import (
+    DeepSeekProvider,
     DeterministicVisualPlanningProvider,
     DeterministicWorkflowProvider,
+    ModelProviderPort,
 )
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
@@ -130,7 +132,22 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_candidate_review_service = BriefCandidateReviewService(
         lambda: SqlAlchemyUnitOfWork(session_factory)
     )
-    workflow_provider = DeterministicWorkflowProvider()
+    workflow_provider: ModelProviderPort
+    visual_provider: ModelProviderPort
+    if resolved_settings.model_provider == "deepseek":
+        workflow_provider = DeepSeekProvider(
+            api_key=resolved_settings.deepseek_api_key or "",
+            timeout_seconds=resolved_settings.deepseek_timeout_seconds,
+            max_attempts=resolved_settings.deepseek_max_attempts,
+            max_input_bytes=resolved_settings.deepseek_max_input_bytes,
+            max_output_bytes=resolved_settings.deepseek_max_output_bytes,
+        )
+        visual_provider = workflow_provider
+        revision_provider: ModelProviderPort | None = workflow_provider
+    else:
+        workflow_provider = DeterministicWorkflowProvider()
+        visual_provider = DeterministicVisualPlanningProvider()
+        revision_provider = None
     app.state.brief_extraction_service = StructuredBriefExtractionService(
         lambda: SqlAlchemyUnitOfWork(session_factory), workflow_provider
     )
@@ -139,7 +156,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         workflow_provider,
     )
     visual_planning_service = VisualPlanningApplicationService(
-        lambda: SqlAlchemyUnitOfWork(session_factory), DeterministicVisualPlanningProvider()
+        lambda: SqlAlchemyUnitOfWork(session_factory), visual_provider
     )
     app.state.visual_planning_application_service = visual_planning_service
     app.state.storyboard_application_service = visual_planning_service
@@ -161,7 +178,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         max_upload_bytes=resolved_settings.api_max_upload_bytes,
     )
     app.state.review_revision_delivery_service = ReviewRevisionDeliveryApplicationService(
-        lambda: SqlAlchemyUnitOfWork(session_factory), storage
+        lambda: SqlAlchemyUnitOfWork(session_factory), storage, revision_provider
     )
     app.state.document_extraction_application_service = DocumentExtractionApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory), storage

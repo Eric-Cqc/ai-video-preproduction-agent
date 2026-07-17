@@ -8,6 +8,8 @@ from sqlalchemy.engine import make_url
 
 LOCAL_DATABASE_URL = "postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_local"
 TEMPORARY_IDENTITY_ENVIRONMENTS = frozenset({"local", "test", "ci"})
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 
 class ApiSettings(BaseSettings):
@@ -30,9 +32,35 @@ class ApiSettings(BaseSettings):
         "local_filesystem_v1"
     )
     source_object_storage_root: str = Field(default=".local/source-objects", min_length=1)
+    model_provider: Literal["deterministic_offline", "deepseek"] = "deterministic_offline"
+    deepseek_api_key: str | None = Field(default=None, repr=False)
+    deepseek_base_url: str = DEEPSEEK_BASE_URL
+    deepseek_model: str = DEEPSEEK_MODEL
+    deepseek_timeout_seconds: float = Field(default=60, gt=0, le=60)
+    deepseek_max_attempts: int = Field(default=2, ge=1, le=2)
+    deepseek_max_input_bytes: int = Field(default=131_072, ge=1024, le=262_144)
+    deepseek_max_output_bytes: int = Field(default=262_144, ge=1024, le=262_144)
 
     @model_validator(mode="after")
     def validate_database_configuration(self) -> "ApiSettings":
+        if self.model_provider == "deepseek":
+            if not self.deepseek_api_key:
+                raise ValueError("DEEPSEEK_API_KEY is required when MODEL_PROVIDER=deepseek")
+            parsed_provider = urlparse(self.deepseek_base_url)
+            if (
+                self.deepseek_base_url != DEEPSEEK_BASE_URL
+                or parsed_provider.scheme != "https"
+                or parsed_provider.netloc != "api.deepseek.com"
+                or parsed_provider.path not in {"", "/"}
+                or parsed_provider.params
+                or parsed_provider.query
+                or parsed_provider.fragment
+                or parsed_provider.username
+                or parsed_provider.password
+            ):
+                raise ValueError("DEEPSEEK_BASE_URL must be the approved HTTPS DeepSeek origin")
+            if self.deepseek_model != DEEPSEEK_MODEL:
+                raise ValueError("DEEPSEEK_MODEL must be deepseek-v4-flash")
         if (
             self.source_object_storage_adapter == "local_filesystem_v1"
             and self.app_environment not in TEMPORARY_IDENTITY_ENVIRONMENTS

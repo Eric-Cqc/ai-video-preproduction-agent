@@ -1,3 +1,6 @@
 # Real provider integration checklist
 
-Real provider integration is not implemented. It requires a separately approved ADR, offline conformance parity, explicit secret injection, bounded retry policy, no tools/fetch by default, and a security review before any network capability is enabled.
+Hosted Pilot Phase 1 implements the narrowly approved ADR-064 DeepSeek Adapter. It remains opt-in,
+server-only, JSON-only, bounded and covered by offline mock transport tests. Live smoke requires an
+explicit local key and is never part of CI or `make check`; hosted deployment, identity and cloud
+storage remain unimplemented.
