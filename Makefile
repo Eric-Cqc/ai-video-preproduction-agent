@@ -106,7 +106,7 @@ rc-up: db-up db-upgrade
 	API_BASE_URL=http://127.0.0.1:$(RC_API_PORT) $(MAKE) build
 	@mkdir -p .local/rc; \
 	if ! test -f .local/rc/api.pid || ! kill -0 $$(cat .local/rc/api.pid) 2>/dev/null; then \
-	  nohup $(UV_RUN) uvicorn services.api.app.main:app --host 127.0.0.1 --port $(RC_API_PORT) >.local/rc/api.log 2>&1 & echo $$! >.local/rc/api.pid; \
+	  nohup env UV_CACHE_DIR=$(UV_CACHE_DIR) uv run --frozen --offline uvicorn services.api.app.main:app --host 127.0.0.1 --port $(RC_API_PORT) >.local/rc/api.log 2>&1 & echo $$! >.local/rc/api.pid; \
 	fi; \
 	if ! test -f .local/rc/web.pid || ! kill -0 $$(cat .local/rc/web.pid) 2>/dev/null; then \
 	  WEB_PORT=$(RC_WEB_PORT) nohup $(NODE_RUNNER) npm --workspace @foundation/web run start >.local/rc/web.log 2>&1 & echo $$! >.local/rc/web.pid; \
