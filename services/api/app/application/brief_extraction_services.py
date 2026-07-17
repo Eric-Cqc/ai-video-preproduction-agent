@@ -45,6 +45,54 @@ class BriefExtractionResult:
     attempt: BriefExtractionAttempt
 
 
+def validate_structured_brief_provider_output(
+    output_text: str | None,
+    *,
+    require_no_blocking_issues: bool = False,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    """Pure production validation shared by extraction and the opt-in smoke."""
+    if (
+        output_text is None
+        or len(output_text) > MAX_MODEL_OUTPUT_CHARACTERS
+        or output_text.lstrip().startswith("```")
+    ):
+        raise InvalidRequest("brief provider output is malformed", code="malformed_output")
+    try:
+        value = json.loads(
+            output_text,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON constant: {value}")
+            ),
+        )
+    except (json.JSONDecodeError, ValueError) as error:
+        raise InvalidRequest(
+            "brief provider output is malformed", code="malformed_output"
+        ) from error
+    if not isinstance(value, dict):
+        raise InvalidRequest("brief provider output is schema invalid", code="schema_invalid")
+    try:
+        validate_structured_brief(value)
+    except ValidationError as error:
+        raise InvalidRequest(
+            "brief provider output is schema invalid", code="schema_invalid"
+        ) from error
+    typed_value: dict[str, object] = {key: item for key, item in value.items()}
+    issues: list[dict[str, object]] = [
+        {
+            "issue_type": issue.issue_type.value,
+            "field_path": issue.field_path,
+            "severity": issue.severity.value,
+            "message": issue.message,
+        }
+        for issue in detect_requirement_issues(typed_value)
+    ]
+    if require_no_blocking_issues and any(issue["severity"] == "blocking" for issue in issues):
+        raise InvalidRequest(
+            "brief provider output is semantically invalid", code="semantic_invalid"
+        )
+    return typed_value, issues
+
+
 class StructuredBriefExtractionService:
     def __init__(
         self,
@@ -211,20 +259,14 @@ class StructuredBriefExtractionService:
         if output_text is None or len(output_text) > MAX_MODEL_OUTPUT_CHARACTERS:
             return BriefExtractionAttemptStatus.MALFORMED_OUTPUT, None, "malformed_output"
         try:
-            value = json.loads(
-                output_text,
-                parse_constant=lambda value: (_ for _ in ()).throw(
-                    ValueError(f"non-finite JSON constant: {value}")
-                ),
-            )
-        except (json.JSONDecodeError, ValueError):
-            return BriefExtractionAttemptStatus.MALFORMED_OUTPUT, None, "malformed_output"
-        if not isinstance(value, dict):
-            return BriefExtractionAttemptStatus.SCHEMA_INVALID, None, "schema_invalid"
-        try:
-            validate_structured_brief(value)
-        except ValidationError:
-            return BriefExtractionAttemptStatus.SCHEMA_INVALID, None, "schema_invalid"
+            value, _ = validate_structured_brief_provider_output(output_text)
+        except InvalidRequest as error:
+            mapping = {
+                "malformed_output": BriefExtractionAttemptStatus.MALFORMED_OUTPUT,
+                "schema_invalid": BriefExtractionAttemptStatus.SCHEMA_INVALID,
+                "semantic_invalid": BriefExtractionAttemptStatus.SCHEMA_INVALID,
+            }
+            return mapping[error.code], None, error.code
         return BriefExtractionAttemptStatus.SUCCEEDED, value, None
 
     @staticmethod
