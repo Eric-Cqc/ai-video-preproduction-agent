@@ -8,13 +8,14 @@ PYTHONPATH := $(CURDIR):$(CURDIR)/packages/contracts/python:$(CURDIR)/packages/m
 DATABASE_URL ?= postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_local
 TEST_DATABASE_URL ?= postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_test
 DB_COMPOSE := docker compose --project-name ai-video-preproduction-agent --file infra/docker/compose.postgres.yml
+HOSTED_COMPOSE := docker compose --env-file .env.hosted --file infra/docker/compose.hosted.yml
 RC_API_PORT ?= 18000
 RC_WEB_PORT ?= 13000
 
 -include .env
 export
 
-.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check rc-up rc-seed rc-smoke rc-check rc-down demo-smoke provider-live-smoke
+.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-downgrade db-current db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test contract-check build check rc-up rc-seed rc-smoke rc-check rc-down demo-smoke provider-live-smoke hosted-build hosted-up hosted-bootstrap hosted-smoke hosted-logs hosted-down
 
 setup:
 	$(NODE_RUNNER) npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund
@@ -124,6 +125,25 @@ demo-smoke: rc-smoke
 
 provider-live-smoke:
 	$(UV_RUN) python -m infra.scripts.provider_live_smoke
+
+hosted-build:
+	$(HOSTED_COMPOSE) build
+
+hosted-up:
+	$(HOSTED_COMPOSE) up --detach --wait
+
+hosted-bootstrap:
+	$(HOSTED_COMPOSE) exec api alembic upgrade head
+	$(HOSTED_COMPOSE) exec api python -m infra.scripts.hosted_bootstrap
+
+hosted-smoke:
+	$(HOSTED_COMPOSE) exec api python -m infra.scripts.hosted_smoke
+
+hosted-logs:
+	$(HOSTED_COMPOSE) logs --follow --tail=100
+
+hosted-down:
+	$(HOSTED_COMPOSE) down
 
 rc-check: db-up db-upgrade build db-current rc-smoke
 	@set -e; \

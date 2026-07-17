@@ -1,0 +1,84 @@
+name: ai-video-preproduction-hosted
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-pilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal, public]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    env_file: ../../.env.hosted
+    environment:
+      API_HOST: 0.0.0.0
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pilot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pilot}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    volumes:
+      - application_files:/var/lib/ai-video-preproduction
+    networks: [internal]
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+    env_file: ../../.env.hosted
+    environment:
+      API_BASE_URL: http://api:8000
+      PUBLIC_API_BASE_URL: https://${PILOT_DOMAIN}/api
+      WEB_HOST: 0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [internal]
+
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      PILOT_DOMAIN: ${PILOT_DOMAIN:?set PILOT_DOMAIN}
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    restart: unless-stopped
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+  public: {}
+
+volumes:
+  postgres_data:
+  application_files:
+  caddy_data:
+  caddy_config:
