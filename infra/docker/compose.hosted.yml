@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    networks: [internal, public]
+    networks: [internal]
 
   api:
     build:
@@ -70,7 +70,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [internal]
+    networks: [internal, public]
 
 networks:
   internal:

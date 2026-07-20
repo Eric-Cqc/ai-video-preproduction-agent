@@ -1,15 +1,10 @@
-from collections.abc import Iterator
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from services.api.app.application.context import ActorContext, OrganizationContext
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.config import get_api_settings
 from services.api.app.infrastructure.database import create_database_engine, create_session_factory
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
-
-
-def _id_factory(values: Iterator[UUID]) -> UUID:
-    return next(values, uuid4)
 
 
 def main() -> None:
@@ -27,13 +22,13 @@ def main() -> None:
         with SqlAlchemyUnitOfWork(factory) as uow:
             organization = uow.organizations.get(organization_id)
             workspace = uow.workspaces.get(organization_id, workspace_id)
-        ids = iter((organization_id, uuid4(), workspace_id))
-        service = TenantApplicationService(
-            lambda: SqlAlchemyUnitOfWork(factory), id_factory=lambda: _id_factory(ids)
-        )
         actor_context = ActorContext(actor, "hosted-bootstrap")
         if organization is None:
-            organization = service.create_organization(
+            organization_ids = iter((organization_id, uuid4(), uuid4()))
+            organization_service = TenantApplicationService(
+                lambda: SqlAlchemyUnitOfWork(factory), id_factory=lambda: next(organization_ids)
+            )
+            organization = organization_service.create_organization(
                 actor_context,
                 slug=settings.pilot_organization_slug,
                 name=settings.pilot_organization_name,
@@ -44,7 +39,10 @@ def main() -> None:
         ):
             raise SystemExit("configured pilot Organization conflicts with persisted Organization")
         if workspace is None:
-            workspace = service.create_workspace(
+            workspace_service = TenantApplicationService(
+                lambda: SqlAlchemyUnitOfWork(factory), id_factory=lambda: workspace_id
+            )
+            workspace = workspace_service.create_workspace(
                 OrganizationContext(actor, "hosted-bootstrap", organization.id),
                 slug=settings.pilot_workspace_slug,
                 name=settings.pilot_workspace_name,
