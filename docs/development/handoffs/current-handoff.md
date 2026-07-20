@@ -1,104 +1,107 @@
 # Current project handoff
 
-Generated: 2026-07-17 Asia/Hong_Kong.
+Generated: 2026-07-21 Asia/Hong_Kong.
 
-## Repository state
+## Resume objective
 
-- Repository: `ai-video-preproduction-agent`
-- Branch: `main`
-- Base: `cbdfb49`
-- Merge commit / current HEAD: `7890bcb`
-- Productization feature HEAD: `893fedf`
-- Final documentation reconciliation commit: `893fedf`
-- Alembic migration head: `a1b2c3d4e5f6`
-- Working tree at handoff: clean
-- Merge status: productization was merged through PR #11; no further branch push or PR is pending
+Resume Tencent Cloud production acceptance from the bounded DeepSeek Provider fix. Do not
+redeploy the whole stack, run migrations, change PostgreSQL/Caddy, expose credentials, or restart
+productization planning. The next action is to deploy the already-tested API commit described
+below, then continue the existing Golden Path.
 
-The historical Source Asset handoff is archived at
-[source-asset-handoff.md](archive/source-asset-handoff.md). It is historical context only and
-contains no current instructions.
+## Repository and production state
 
-## Productization commits
+- Repository: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
+- Branch: `feat/hosted-single-tenant-mvp`
+- Local HEAD: `df18ce04ee37bfc2c1bdd48490a2ffce821473c7`
+- Production repository: `/home/ubuntu/ai-video-preproduction-agent`
+- Production HEAD: `5ef10df72cdb893f38dabae748dbb3fe9ff4d189`
+- Migration head: `a1b2c3d4e5f6`; no migration is required by the pending commit
+- Local working tree after this handoff commit: expected clean
+- Production working tree: clean when last checked
+- Domain: `app.gemaogejiaojiao.cn`
+- API health: HTTPS 200
+- Web: HTTPS 200
+- Containers: API healthy, PostgreSQL healthy, Web running, Caddy running
 
-1. `3364a5e feat: add product workspace interface`
-2. `855ace8 feat: add deterministic end-to-end demo`
-3. `2c60f01 chore: harden reliability accessibility and security`
-4. `d7d3be1 feat: add provider integration readiness boundary`
-5. `8199b61 feat: complete interactive golden path`
-6. `9180b4f chore: prepare local release candidate`
-7. `eedd194 chore: complete whole-repository release audit`
-8. `893fedf docs: reconcile productization release state`
+Relevant commits:
 
-## Current product capability
+1. `fa467e4 fix: restore hosted pilot access`
+2. `1273c38 fix: keep hosted secrets out of web`
+3. `5ef10df fix: allow hosted provider egress`
+4. `df18ce0 fix: bound DeepSeek structured output` — tested locally, not yet deployed
 
-The tenant-aware Production Desk executes the real local HTTP workflow through application
-services, repositories, Unit of Work, PostgreSQL, local StoragePort, human review boundaries and
-deterministic offline providers:
+## Security state
 
-```text
-Project → Upload → Parse → Brief → Concepts → Script → Storyboard → Shot Plan
-→ Review → Delivery → ZIP
-```
+- The previously exposed pilot password and session-signing secret were rotated successfully.
+- Do not inspect, print, copy or report `.env.hosted`, container environment values, cookies,
+  tokens, Provider keys, Prompts, raw responses or reasoning content.
+- Web now receives only an explicit non-secret runtime allowlist. Production verification printed
+  `WEB_SECRET_ISOLATION=pass`.
+- API alone joins `internal` and `provider_egress`; it publishes no host port. PostgreSQL and Web
+  remain internal-only, and Caddy remains the only public ingress service.
+- A temporary acceptance SSH key is installed for `ubuntu` with comment
+  `codex-video-agent-acceptance-2026-07-21`. Its local private key is
+  `/tmp/codex-video-agent-deploy-key`. Remove the matching public-key line from the server and
+  delete both local key files only after final acceptance. If the local key is unavailable in a
+  future runtime, use the existing Tencent OrcaTerm TAT session rather than requesting secrets.
 
-The path includes SourceAsset registration and verified upload, DocumentExtraction, Brief
-candidate acceptance, explicit Concept selection, immutable Script/Storyboard/Shot Plan versions,
-exact planning-bundle approval, immutable DeliveryPackageVersion, server-generated export and ZIP
-checksum verification. It does not write final business state through SQL or repository shortcuts.
+## Acceptance evidence so far
 
-## Local release candidate
+- Production login with the rotated credential: passed.
+- Refresh after login retained the session: passed.
+- Protected project creation proved hosted tenant identity propagation: passed.
+- Test project: `Hosted Pilot Acceptance 2026-07-20`; it contains only synthetic fixture data.
+- Project → SourceAsset → upload → parse → Brief extraction run all returned 201.
+- Candidate read returned opaque 404 because the recorded attempt was
+  `provider_error`, with zero output characters.
+- Root cause of the first Provider failure: API was attached only to a Docker
+  `internal: true` network, so the DeepSeek TCP connection failed with `ConnectError`.
+- Commit `5ef10df` added an API-only egress network and was deployed without recreating Web,
+  PostgreSQL or Caddy.
+- After that deployment, a fixed synthetic status probe returned DeepSeek HTTP 200. A safe
+  envelope probe confirmed: JSON object, one choice, string content, `finish_reason=stop`, bounded
+  usage metadata and non-empty Provider reasoning. No content or reasoning text was printed.
+- The official live smoke still failed closed as `provider_error` because V4 Flash defaults to
+  thinking and its variable reasoning envelope conflicts with the smoke's 4 KiB response bound.
+- Commit `df18ce0` explicitly disables thinking, adds a bounded `max_tokens`, and rejects non-stop
+  finishes, reasoning content, oversized content and malformed envelopes.
 
-The supported local RC commands are:
+## Verification for `df18ce0`
 
-```bash
-make rc-up
-make rc-seed
-make rc-smoke
-make rc-check
-make rc-down
-make demo-smoke
-```
+- DeepSeek Provider and live-smoke focused tests: passed.
+- `make format-check`: passed.
+- `make lint`: passed.
+- `make typecheck`: passed; mypy checked 129 source files.
+- `make build`: passed.
+- Full `make check`: passed with the existing isolated database
+  `foundation_phase0_test`; migration head was `a1b2c3d4e5f6` and metadata drift reported no new
+  operations. Contract tests: 13 passed. Web tests: 19 passed.
+- The default local database is owned by a different branch state and is not on this branch's
+  head. Do not downgrade or reset it; continue using the isolated database if gates must be rerun.
 
-`rc-seed` creates only repeatable local Organization/Workspace context. `rc-smoke` exercises the
-complete workflow through real HTTP, PostgreSQL and local storage and verifies representative
-replay, changed-digest conflict, exact lineage, permissions, opaque cross-tenant download denial,
-ZIP members, manifest and checksum. `rc-down` stops the environment without deleting persistent
-volumes.
+## Exact next actions
 
-## Verification record
+1. Push the handoff/current local commits if they are not already on
+   `origin/feat/hosted-single-tenant-mvp`.
+2. On production, fast-forward exactly from `5ef10df` to the final local branch HEAD.
+3. Build and recreate only `api`; assert Web, PostgreSQL and Caddy container IDs are unchanged.
+4. Confirm API healthy and local/public HTTPS health 200.
+5. Run exactly one repository-defined safe live smoke:
+   `ALLOW_PROVIDER_LIVE_SMOKE=1`, fixed synthetic input, no persistence, no raw output.
+6. If the smoke passes JSON/schema/semantic validation, resume the existing browser Golden Path
+   on `Hosted Pilot Acceptance 2026-07-20`. The already-created SourceAsset/upload/extraction
+   operations are idempotent; do not delete the project or database rows.
+7. Verify Concept, Script, Storyboard, Shot Plan, Review, Delivery and ZIP download/extraction.
+8. Verify logout, post-logout denial, and distinct 401/429/network/5xx UI behavior as applicable.
+9. Review safe API/Caddy logs for persistent 500/502/504 without printing sensitive content.
+10. Remove the temporary SSH public key and local `/tmp` private/public key files, then issue the
+    final production acceptance report.
 
-- Python: 353 tests collected and passed in the full gate.
-- Cross-language contracts: 13 tests passed.
-- Web: 13 tests passed.
-- `make check`: passed, including format, lint, strict types, tests, contract checks, production
-  Web build, migration head and metadata-drift checks.
-- `make demo-smoke`: passed.
-- `make rc-smoke`: passed.
-- `make rc-check`: passed.
-- Empty database base-to-head and Stage 12/13 boundary downgrade/re-upgrade: passed.
-- Final branch diff check: clean.
+## Current limitations
 
-## Current boundaries and limitations
-
-- Deterministic offline providers remain the default. ADR-064 permits only an opt-in server-side
-  DeepSeek `deepseek-v4-flash` adapter; it has no SDK and is excluded from CI and ordinary tests.
-- The release candidate is local only; there is no cloud deployment or cloud object storage.
-- There are no jobs, queues, image generation, video generation or media rendering capabilities.
-- Temporary local tenant headers are development context, not production authentication.
-- The dependency-owned Starlette TestClient deprecation warning remains because resolving it
-  requires a prohibited dependency and lockfile change.
-
-## Hosted Pilot Phase 1
-
-`feat/hosted-pilot-real-provider` is the authorized local-only DeepSeek pilot. Provider keys,
-full prompts, raw responses and customer source bodies do not enter persistence, audit, logs or the
-browser. Live smoke is explicit, cost-bearing and excluded from `make check`.
-
-## Next actions
-
-Only post-merge product review and future product decisions remain:
-
-1. Perform a manual local product experience pass.
-2. Use a new ADR and explicit approval before any future production-capability decision.
-
-Do not resume Stage 13, the historical Source Asset Milestone D, or speculative Stage 20 work from
-this handoff.
+- This remains a private single-tenant hosted pilot, not public multi-user authentication.
+- Only the approved server-side DeepSeek `deepseek-v4-flash` Adapter is allowed.
+- No image/video generation, media rendering, background jobs, cloud object storage, billing,
+  Clerk/JWT, organization switching or speculative Stage 20 work is authorized.
+- The dependency-owned Starlette TestClient/httpx deprecation warning remains accepted.
