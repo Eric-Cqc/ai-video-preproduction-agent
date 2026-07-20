@@ -13,7 +13,9 @@ below, then continue the existing Golden Path.
 
 - Repository: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
 - Branch: `feat/hosted-single-tenant-mvp`
-- Local HEAD: `df18ce04ee37bfc2c1bdd48490a2ffce821473c7`
+- Validated Provider implementation commit: `df18ce04ee37bfc2c1bdd48490a2ffce821473c7`.
+  The current branch tip also contains this handoff; confirm `df18ce0` is its ancestor rather than
+  resetting the branch tip to the implementation commit.
 - Production repository: `/home/ubuntu/ai-video-preproduction-agent`
 - Production HEAD: `5ef10df72cdb893f38dabae748dbb3fe9ff4d189`
 - Migration head: `a1b2c3d4e5f6`; no migration is required by the pending commit
