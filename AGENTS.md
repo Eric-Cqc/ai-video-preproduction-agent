@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-第1–19阶段已完成并合并到 `main`。Hosted Pilot Phase 1 仅授权通过 ADR-064 的服务器端 DeepSeek `deepseek-v4-flash` Adapter；默认、测试与 CI 仍使用确定性离线 Provider。除该精确 Adapter 外，继续禁止真实 Provider/SDK、浏览器 Provider 访问、tool use、URL 抓取、图片或视频生成、媒体渲染、Job/queue、云对象存储、认证、部署与第二十阶段推测性范围。所有产物必须 tenant-aware、可审计且保持不可变 lineage。
+第1–19阶段已完成并合并到 `main`。Hosted MVP Phase 1 授权通过 ADR-064 的服务器端 DeepSeek `deepseek-v4-flash` Adapter、一个明确标记为非生产认证的单租户私有试点访问门，以及本地可运营 Docker Compose 部署构成。默认、测试与 CI 仍使用确定性离线 Provider。除该精确 Adapter 与私有试点门外，继续禁止其他真实 Provider/SDK、浏览器 Provider 访问、tool use、URL 抓取、图片或视频生成、媒体渲染、Job/queue、云对象存储、Clerk/JWT/多租户认证、Neon、R2、Vercel、Tauri 与第二十阶段推测性范围。所有产物必须 tenant-aware、可审计且保持不可变 lineage。
 
 所有 Node.js、npm、npx 或 JavaScript 包管理器命令必须通过 `./scripts/run-with-node.sh`。Python 使用仓库内 `.venv` 与已锁定依赖，不修改全局环境。
 

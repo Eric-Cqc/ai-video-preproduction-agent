@@ -29,6 +29,12 @@ def require_actor_context(
     x_organization_id: OrganizationHeader = None,
     x_workspace_id: WorkspaceHeader = None,
 ) -> ActorContext:
+    settings: ApiSettings = request.app.state.settings
+    if settings.hosted_pilot_enabled:
+        return ActorContext(
+            actor_subject=settings.pilot_actor_subject or "",
+            correlation_id=request.state.correlation_id,
+        )
     _require_temporary_context_enabled(request)
     if x_organization_id is not None or x_workspace_id is not None:
         raise InvalidRequest("bootstrap context must not include tenant headers")
@@ -45,6 +51,15 @@ def require_organization_context(
     x_organization_id: OrganizationHeader = None,
     x_workspace_id: WorkspaceHeader = None,
 ) -> OrganizationContext:
+    settings: ApiSettings = request.app.state.settings
+    if settings.hosted_pilot_enabled:
+        if organization_id != settings.pilot_organization_id:
+            raise ResourceNotFound("organization context is not accessible")
+        return OrganizationContext(
+            actor_subject=settings.pilot_actor_subject or "",
+            correlation_id=request.state.correlation_id,
+            organization_id=organization_id,
+        )
     _require_temporary_context_enabled(request)
     if x_workspace_id is not None:
         raise ResourceNotFound("organization context is not accessible")
@@ -66,6 +81,19 @@ def require_tenant_context(
     x_organization_id: OrganizationHeader = None,
     x_workspace_id: WorkspaceHeader = None,
 ) -> TenantContext:
+    settings: ApiSettings = request.app.state.settings
+    if settings.hosted_pilot_enabled:
+        if (
+            organization_id != settings.pilot_organization_id
+            or workspace_id != settings.pilot_workspace_id
+        ):
+            raise ResourceNotFound("tenant context is not accessible")
+        return TenantContext(
+            actor_subject=settings.pilot_actor_subject or "",
+            correlation_id=request.state.correlation_id,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+        )
     _require_temporary_context_enabled(request)
     header_organization_id = _parse_uuid(x_organization_id, "X-Organization-Id")
     header_workspace_id = _parse_uuid(x_workspace_id, "X-Workspace-Id")

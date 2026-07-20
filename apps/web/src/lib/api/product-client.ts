@@ -49,6 +49,7 @@ export function createProductClient(
   baseUrl: string,
   context: LocalWorkspaceContext,
   fetcher: ProductFetcher = fetch,
+  useTemporaryHeaders = true,
 ): ProductClient {
   const workspacePath = `/api/v1/organizations/${encodeURIComponent(context.organizationId)}/workspaces/${encodeURIComponent(context.workspaceId)}`;
   const request = async <T>(
@@ -60,9 +61,11 @@ export function createProductClient(
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
     const headers = new Headers(init.headers);
     headers.set("accept", "application/json");
-    headers.set("X-Actor-Subject", context.actorSubject);
-    headers.set("X-Organization-Id", context.organizationId);
-    headers.set("X-Workspace-Id", context.workspaceId);
+    if (useTemporaryHeaders) {
+      headers.set("X-Actor-Subject", context.actorSubject);
+      headers.set("X-Organization-Id", context.organizationId);
+      headers.set("X-Workspace-Id", context.workspaceId);
+    }
     try {
       const response = await fetcher(new URL(path, baseUrl), {
         ...init,

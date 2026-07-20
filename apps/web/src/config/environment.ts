@@ -1,6 +1,7 @@
 export interface WebEnvironment {
   applicationEnvironment: string;
   apiBaseUrl: URL;
+  browserApiBaseUrl: URL;
 }
 
 function parseApiBaseUrl(rawValue: string): URL {
@@ -27,5 +28,8 @@ export function loadWebEnvironment(
   const apiBaseUrl = parseApiBaseUrl(
     environment.API_BASE_URL?.trim() || "http://127.0.0.1:8000",
   );
-  return { applicationEnvironment, apiBaseUrl };
+  const browserApiBaseUrl = parseApiBaseUrl(
+    environment.PUBLIC_API_BASE_URL?.trim() || apiBaseUrl.toString(),
+  );
+  return { applicationEnvironment, apiBaseUrl, browserApiBaseUrl };
 }
