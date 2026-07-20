@@ -6,7 +6,11 @@ from sqlalchemy import Engine, text
 
 from services.api.app.application.errors import ApplicationError
 from services.api.app.application.model_provider import DeterministicVisualPlanningProvider
-from services.api.app.application.visual_planning_services import VisualPlanningApplicationService
+from services.api.app.application.visual_planning_services import (
+    SHOT_PLAN_PROMPT_INSTRUCTIONS,
+    STORYBOARD_PROMPT_INSTRUCTIONS,
+    VisualPlanningApplicationService,
+)
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.tests.test_visual_planning_persistence import (
@@ -71,6 +75,13 @@ def test_storyboard_and_shot_plan_generation_chain(
     assert shot_plan.replayed is False
     assert shot_plan.version.shot_count == 1
     assert shot_plan.version.storyboard_version_id == storyboard.version.id
+
+
+def test_visual_planning_prompts_define_exact_schema_and_lineage() -> None:
+    assert "exactly one storyboard scene" in STORYBOARD_PROMPT_INSTRUCTIONS
+    assert "source_script_scene_number must equal" in STORYBOARD_PROMPT_INSTRUCTIONS
+    assert "exactly one shot" in SHOT_PLAN_PROMPT_INSTRUCTIONS
+    assert "estimated_duration_seconds must equal" in SHOT_PLAN_PROMPT_INSTRUCTIONS
 
 
 @pytest.mark.parametrize(

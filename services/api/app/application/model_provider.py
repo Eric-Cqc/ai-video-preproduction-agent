@@ -208,7 +208,7 @@ class DeterministicWorkflowProvider:
             concepts = [dict(concept, title=f"Everyday clarity {index}") for index in range(1, 4)]
             return ProviderOutcome(
                 ProviderOutcomeStatus.SUCCESS,
-                json.dumps(concepts, sort_keys=True, separators=(",", ":")),
+                json.dumps({"concepts": concepts}, sort_keys=True, separators=(",", ":")),
             )
         if request.instruction_template_id == "script_from_selected_concept":
             script = {

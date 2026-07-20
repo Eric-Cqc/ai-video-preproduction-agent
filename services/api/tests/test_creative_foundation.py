@@ -29,7 +29,7 @@ def _service(session_factory: SessionFactory) -> CreativeApplicationService:
     concepts[1]["title"] = "Second concept"
     concepts[2]["title"] = "Third concept"
     provider = DeterministicFakeProvider(
-        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, json.dumps(concepts))
+        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, json.dumps({"concepts": concepts}))
     )
     return CreativeApplicationService(lambda: SqlAlchemyUnitOfWork(session_factory), provider)
 
@@ -59,6 +59,11 @@ def test_concept_selection_and_script_lineage(
         context, project_id, brief.brief.id, brief.current_version.id, idempotency_key="concepts-1"
     )
     assert len(generated.candidates) == 3
+    assert isinstance(service.provider, DeterministicFakeProvider)
+    assert service.provider.last_request is not None
+    assert service.provider.last_request.instruction_template_id == "creative_concepts_from_brief"
+    assert "exactly one property named concepts" in service.provider.last_request.instructions
+    assert service.provider.last_request.allow_tools is False
     replay = service.generate_concepts(
         context, project_id, brief.brief.id, brief.current_version.id, idempotency_key="concepts-1"
     )
@@ -86,6 +91,11 @@ def test_concept_selection_and_script_lineage(
     script = service.generate_script(
         context, project_id, generated.run.id, idempotency_key="script-1"
     )
+    assert isinstance(service.provider, DeterministicFakeProvider)
+    assert service.provider.last_request is not None
+    assert service.provider.last_request.instruction_template_id == "script_from_selected_concept"
+    assert "target_duration_seconds must equal" in service.provider.last_request.instructions
+    assert service.provider.last_request.allow_tools is False
     assert script.version.concept_selection_id == selected.selection.id
     assert script.version.brief_version_id == brief.current_version.id
     with database_engine.connect() as connection:
@@ -111,11 +121,27 @@ def test_concept_wrong_count_rolls_back_operation(
         source_reference=None,
         change_summary="Creative input",
     )
-    provider = DeterministicFakeProvider(ProviderOutcome(ProviderOutcomeStatus.SUCCESS, "[]"))
+    provider = DeterministicFakeProvider(
+        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, '{"concepts":[]}')
+    )
     service = CreativeApplicationService(
         lambda: SqlAlchemyUnitOfWork(persistence_session_factory), provider
     )
     with pytest.raises(InvalidRequest):
+        service.generate_concepts(
+            context,
+            project_id,
+            brief.brief.id,
+            brief.current_version.id,
+            idempotency_key="bad-count",
+        )
+    service.provider = DeterministicFakeProvider(
+        ProviderOutcome(
+            ProviderOutcomeStatus.SUCCESS,
+            json.dumps({"concepts": [{"schema_version": "1.0.0"}] * 3}),
+        )
+    )
+    with pytest.raises(InvalidRequest, match="schema invalid"):
         service.generate_concepts(
             context,
             project_id,

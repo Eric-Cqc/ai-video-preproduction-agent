@@ -38,7 +38,7 @@ def _concept_provider() -> DeterministicFakeProvider:
     for index, concept in enumerate(concepts, 1):
         concept["title"] = f"Concept {index}"
     return DeterministicFakeProvider(
-        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, json.dumps(concepts))
+        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, json.dumps({"concepts": concepts}))
     )
 
 
