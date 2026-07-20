@@ -4,105 +4,120 @@ Generated: 2026-07-21 Asia/Hong_Kong.
 
 ## Resume objective
 
-Resume Tencent Cloud production acceptance from the bounded DeepSeek Provider fix. Do not
-redeploy the whole stack, run migrations, change PostgreSQL/Caddy, expose credentials, or restart
-productization planning. The next action is to deploy the already-tested API commit described
-below, then continue the existing Golden Path.
+Resume Tencent Cloud production acceptance at the existing signed-in Production Desk. The
+Provider network and structured-output defects are fixed and the repository-defined safe
+DeepSeek live smoke has passed. Do not redeploy, rerun the live smoke, recreate the test project,
+run migrations, or restart PostgreSQL/Caddy. Continue the existing synthetic Golden Path, verify
+the Delivery ZIP and session/logout behavior, inspect only safe logs, then remove the temporary
+acceptance SSH key.
 
 ## Repository and production state
 
-- Repository: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
-- Branch: `feat/hosted-single-tenant-mvp`
-- Validated Provider implementation commit: `df18ce04ee37bfc2c1bdd48490a2ffce821473c7`.
-  The current branch tip also contains this handoff; confirm `df18ce0` is its ancestor rather than
-  resetting the branch tip to the implementation commit.
+- Local repository: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
 - Production repository: `/home/ubuntu/ai-video-preproduction-agent`
-- Production HEAD: `5ef10df72cdb893f38dabae748dbb3fe9ff4d189`
-- Migration head: `a1b2c3d4e5f6`; no migration is required by the pending commit
-- Local working tree after this handoff commit: expected clean
-- Production working tree: clean when last checked
+- Branch: `feat/hosted-single-tenant-mvp`
+- Deployed application HEAD: `e81dfcb575e3ec59006951ab37a2b2eabf20021c`
+- This handoff is a documentation-only descendant of `e81dfcb`; it does not require a production
+  deployment. Confirm `e81dfcb` is an ancestor of the local/origin branch tip rather than resetting
+  the branch to the deployed application commit.
+- Local and production working trees: clean when this checkpoint was started
+- Migration head: `a1b2c3d4e5f6`; no migration is pending
 - Domain: `app.gemaogejiaojiao.cn`
-- API health: HTTPS 200
-- Web: HTTPS 200
-- Containers: API healthy, PostgreSQL healthy, Web running, Caddy running
+- API health: public HTTPS 200
+- Web: public HTTPS 200
+- Production Compose file: `infra/docker/compose.hosted.yml`
+- Compose services: `api`, `web`, `postgres`, `caddy`
+- API: running and healthy; attached to `internal` and `provider_egress`
+- PostgreSQL: running and healthy; internal-only
+- Web: running; internal-only
+- Caddy: running; the only public ingress, with TCP 80/443 published
 
-Relevant commits:
+Relevant commits, oldest first:
 
 1. `fa467e4 fix: restore hosted pilot access`
 2. `1273c38 fix: keep hosted secrets out of web`
 3. `5ef10df fix: allow hosted provider egress`
-4. `df18ce0 fix: bound DeepSeek structured output` — tested locally, not yet deployed
+4. `df18ce0 fix: bound DeepSeek structured output`
+5. `64ca6bb docs: checkpoint hosted acceptance`
+6. `e81dfcb docs: clarify hosted checkpoint head`
+
+The latest production update rebuilt and recreated only `api`; Web, PostgreSQL and Caddy were not
+recreated by that update. Production HEAD and all four service states were rechecked immediately
+before this handoff revision.
 
 ## Security state
 
 - The previously exposed pilot password and session-signing secret were rotated successfully.
-- Do not inspect, print, copy or report `.env.hosted`, container environment values, cookies,
-  tokens, Provider keys, Prompts, raw responses or reasoning content.
-- Web now receives only an explicit non-secret runtime allowlist. Production verification printed
+- Production login using the rotated credential passed. Do not ask for, inspect, copy or report
+  the credential again.
+- Never inspect or print `.env.hosted`, container environment values, cookies, tokens, Provider
+  keys, Prompts, raw Provider responses or reasoning content.
+- Web receives only an explicit non-secret runtime allowlist; production verification reported
   `WEB_SECRET_ISOLATION=pass`.
-- API alone joins `internal` and `provider_egress`; it publishes no host port. PostgreSQL and Web
-  remain internal-only, and Caddy remains the only public ingress service.
-- A temporary acceptance SSH key is installed for `ubuntu` with comment
-  `codex-video-agent-acceptance-2026-07-21`. Its local private key is
-  `/tmp/codex-video-agent-deploy-key`. Remove the matching public-key line from the server and
-  delete both local key files only after final acceptance. If the local key is unavailable in a
-  future runtime, use the existing Tencent OrcaTerm TAT session rather than requesting secrets.
+- A temporary acceptance SSH key remains installed for `ubuntu` with comment
+  `codex-video-agent-acceptance-2026-07-21`. The local private key is
+  `/tmp/codex-video-agent-deploy-key` and the public key is the same path with `.pub` appended.
+  Remove the matching server `authorized_keys` line and both local files only after all acceptance
+  work is complete.
 
-## Acceptance evidence so far
+## Verification completed
 
-- Production login with the rotated credential: passed.
-- Refresh after login retained the session: passed.
-- Protected project creation proved hosted tenant identity propagation: passed.
-- Test project: `Hosted Pilot Acceptance 2026-07-20`; it contains only synthetic fixture data.
-- Project → SourceAsset → upload → parse → Brief extraction run all returned 201.
-- Candidate read returned opaque 404 because the recorded attempt was
-  `provider_error`, with zero output characters.
-- Root cause of the first Provider failure: API was attached only to a Docker
-  `internal: true` network, so the DeepSeek TCP connection failed with `ConnectError`.
-- Commit `5ef10df` added an API-only egress network and was deployed without recreating Web,
-  PostgreSQL or Caddy.
-- After that deployment, a fixed synthetic status probe returned DeepSeek HTTP 200. A safe
-  envelope probe confirmed: JSON object, one choice, string content, `finish_reason=stop`, bounded
-  usage metadata and non-empty Provider reasoning. No content or reasoning text was printed.
-- The official live smoke still failed closed as `provider_error` because V4 Flash defaults to
-  thinking and its variable reasoning envelope conflicts with the smoke's 4 KiB response bound.
-- Commit `df18ce0` explicitly disables thinking, adds a bounded `max_tokens`, and rejects non-stop
-  finishes, reasoning content, oversized content and malformed envelopes.
+- `make format-check`, lint, typecheck and build passed; mypy checked 129 source files.
+- Full `make check` passed against the isolated `foundation_phase0_test` database. Migration head
+  was `a1b2c3d4e5f6`, metadata drift reported no new operations, Contract tests were 13 passed and
+  Web tests were 19 passed. The aggregate command exited zero.
+- The default local database belongs to another branch state. Do not downgrade or reset it; use
+  the isolated database only if gates must be rerun.
+- Production API, local HTTPS health, public HTTPS health and Web all passed after the API-only
+  deployment.
+- The repository-defined safe live smoke passed with Provider `deepseek`, model
+  `deepseek-v4-flash`, capability `structured-brief`, accepted authentication, valid JSON, schema
+  validation, semantic validation and safe usage metadata. Recorded safe usage was 619 input,
+  544 output and 1163 total tokens. No raw Prompt, response or reasoning was printed or persisted.
 
-## Verification for `df18ce0`
+## Existing Golden Path state
 
-- DeepSeek Provider and live-smoke focused tests: passed.
-- `make format-check`: passed.
-- `make lint`: passed.
-- `make typecheck`: passed; mypy checked 129 source files.
-- `make build`: passed.
-- Full `make check`: passed with the existing isolated database
-  `foundation_phase0_test`; migration head was `a1b2c3d4e5f6` and metadata drift reported no new
-  operations. Contract tests: 13 passed. Web tests: 19 passed.
-- The default local database is owned by a different branch state and is not on this branch's
-  head. Do not downgrade or reset it; continue using the isolated database if gates must be rerun.
+- Production browser session is authenticated; a reload retained the session.
+- Project list currently reports one project.
+- Existing synthetic project: `Hosted Pilot Acceptance 2026-07-20`, status `draft`.
+- The project is visible but not selected. The detail panel still displays the instruction to
+  choose a project. No Golden Path action was clicked after the latest API deployment.
+- The project contains only synthetic acceptance data. Its earlier SourceAsset, upload and parse
+  steps succeeded. The earlier Brief run failed before the network/output fixes; keep those audit
+  records and rerun through the UI rather than deleting rows.
+- Synthetic upload fixture:
+  `packages/test-fixtures/brief/valid-structured-brief-v1.json`
+- Product-client source/upload/parse operations are idempotent for the same project. Brief
+  extraction creates a new run and should now exercise the fixed real Provider path.
 
 ## Exact next actions
 
-1. Push the handoff/current local commits if they are not already on
-   `origin/feat/hosted-single-tenant-mvp`.
-2. On production, fast-forward exactly from `5ef10df` to the final local branch HEAD.
-3. Build and recreate only `api`; assert Web, PostgreSQL and Caddy container IDs are unchanged.
-4. Confirm API healthy and local/public HTTPS health 200.
-5. Run exactly one repository-defined safe live smoke:
-   `ALLOW_PROVIDER_LIVE_SMOKE=1`, fixed synthetic input, no persistence, no raw output.
-6. If the smoke passes JSON/schema/semantic validation, resume the existing browser Golden Path
-   on `Hosted Pilot Acceptance 2026-07-20`. The already-created SourceAsset/upload/extraction
-   operations are idempotent; do not delete the project or database rows.
-7. Verify Concept, Script, Storyboard, Shot Plan, Review, Delivery and ZIP download/extraction.
-8. Verify logout, post-logout denial, and distinct 401/429/network/5xx UI behavior as applicable.
-9. Review safe API/Caddy logs for persistent 500/502/504 without printing sensitive content.
-10. Remove the temporary SSH public key and local `/tmp` private/public key files, then issue the
-    final production acceptance report.
+1. Do not deploy the documentation-only handoff commit. Reconnect to the existing browser session
+   at `https://app.gemaogejiaojiao.cn/` and confirm the
+   user is still authenticated. Do not inspect cookies or browser storage.
+2. Select `Hosted Pilot Acceptance 2026-07-20` from the one-item project list.
+3. Upload `packages/test-fixtures/brief/valid-structured-brief-v1.json` through the
+   `Structured Brief JSON` chooser, then click `开始 Golden Path` once.
+4. Observe every stage without printing Provider content: Brief candidate acceptance, Concept,
+   Script, Storyboard, Shot Plan, Review approval, Delivery and ZIP export.
+5. If a stage fails, use safe status fields, correlation IDs and bounded API/Caddy log inspection.
+   Do not inspect secrets, Prompt text, raw Provider output or reasoning.
+6. Download the ZIP, verify non-zero size, successful extraction, sane filenames/encoding and the
+   expected Brief, Concept, Script, Storyboard and Shot Plan deliverables.
+7. Confirm the workflow used `deepseek-v4-flash` from safe operation metadata and that accepted
+   artifacts were persisted. Do not run another standalone live smoke unless diagnosing a new
+   failure requires it.
+8. Refresh once to verify the authenticated session remains valid. Then sign out, verify the login
+   screen returns, protected project data is unavailable and post-logout access is denied.
+9. Review bounded, redacted production logs for persistent 500/502/504 responses or accidental
+   secret/raw-content leakage.
+10. Remove the temporary SSH public-key line from the server and delete the local private/public
+    key files. Verify the temporary key no longer authenticates.
+11. Update this handoff to final acceptance evidence, then issue the production acceptance report.
 
 ## Current limitations
 
-- This remains a private single-tenant hosted pilot, not public multi-user authentication.
+- This is a private single-tenant hosted pilot, not public multi-user authentication.
 - Only the approved server-side DeepSeek `deepseek-v4-flash` Adapter is allowed.
 - No image/video generation, media rendering, background jobs, cloud object storage, billing,
   Clerk/JWT, organization switching or speculative Stage 20 work is authorized.
