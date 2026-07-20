@@ -22,7 +22,10 @@ for a no-network acceptance run.
 
 `DEEPSEEK_BASE_URL` must remain the approved HTTPS origin and `DEEPSEEK_MODEL` must remain
 `deepseek-v4-flash`. Do not put either the DeepSeek key or pilot password into browser variables,
-source files, shell history, tickets, or logs.
+source files, shell history, tickets, or logs. The Compose definition injects the complete host
+environment only into the API service. The Web service receives an explicit allowlist of
+non-secret runtime values and must not receive Provider keys, the pilot password, the session
+secret, or PostgreSQL credentials.
 
 ## Commands
 

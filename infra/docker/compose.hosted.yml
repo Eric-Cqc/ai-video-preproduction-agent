@@ -42,8 +42,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
-    env_file: ../../.env.hosted
     environment:
+      APP_ENVIRONMENT: hosted
       API_BASE_URL: http://api:8000
       PUBLIC_API_BASE_URL: https://${PILOT_DOMAIN}/api
       WEB_HOST: 0.0.0.0

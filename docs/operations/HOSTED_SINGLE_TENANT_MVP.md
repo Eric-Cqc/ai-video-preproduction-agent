@@ -16,6 +16,9 @@ Configure `PILOT_DOMAIN` with a DNS name pointing to the host. Caddy terminates 
 only public container. PostgreSQL and the FastAPI service remain on an internal network. The
 password gate uses `PILOT_ACCESS_PASSWORD` and a signed HTTP-only cookie using
 `PILOT_SESSION_SECRET`; it is a private-pilot gate, not production authentication.
+Only the API container receives the complete host environment file. The Web container receives
+an explicit non-secret runtime allowlist and must not contain the Provider key, pilot password,
+session secret, or PostgreSQL credentials.
 
 Run `make hosted-build`, `make hosted-up`, and `make hosted-bootstrap`. The bootstrap is
 idempotent: it creates only the configured Organization, Workspace and owner actor, and rejects
