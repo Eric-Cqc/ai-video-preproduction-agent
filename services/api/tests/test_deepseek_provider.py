@@ -35,13 +35,20 @@ def test_deepseek_request_is_fixed_json_only_and_server_owned() -> None:
         body = json.loads(request.content)
         assert body["model"] == "deepseek-v4-flash"
         assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
+        assert body["max_tokens"] == 256
         assert body["stream"] is False
         assert "tools" not in body and "tool_choice" not in body
         assert "UNTRUSTED_INPUT_BEGIN" in body["messages"][1]["content"]
         return httpx.Response(
             200,
             json={
-                "choices": [{"message": {"content": "{}"}}],
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": "{}", "reasoning_content": None},
+                    }
+                ],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
             },
         )
@@ -74,7 +81,8 @@ def test_deepseek_retries_transient_failure_with_bound() -> None:
         nonlocal calls
         calls += 1
         return httpx.Response(
-            503 if calls == 1 else 200, json={"choices": [{"message": {"content": "{}"}}]}
+            503 if calls == 1 else 200,
+            json={"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]},
         )
 
     assert (
@@ -89,6 +97,24 @@ def test_deepseek_malformed_or_oversized_output_fails_closed() -> None:
     assert malformed.complete(_request()).status is ProviderOutcomeStatus.ERROR
     oversized = _provider(httpx.MockTransport(lambda _: httpx.Response(200, content=b"x" * 1025)))
     assert oversized.complete(_request()).status is ProviderOutcomeStatus.ERROR
+
+
+@pytest.mark.parametrize(
+    "choice",
+    [
+        {"finish_reason": "length", "message": {"content": "{}"}},
+        {
+            "finish_reason": "stop",
+            "message": {"content": "{}", "reasoning_content": "not retained"},
+        },
+        {"finish_reason": "stop", "message": {"content": "x" * 101}},
+    ],
+)
+def test_deepseek_completion_boundaries_fail_closed(choice: dict[str, object]) -> None:
+    provider = _provider(
+        httpx.MockTransport(lambda _: httpx.Response(200, json={"choices": [choice]}))
+    )
+    assert provider.complete(_request()).status is ProviderOutcomeStatus.ERROR
 
 
 def test_deepseek_configuration_is_strict_and_default_is_offline() -> None:

@@ -14,6 +14,10 @@ metadata is bounded when supplied, but no new speculative persistence is added.
 
 Retries are limited to two attempts for transport timeouts and selected 5xx/rate-limit responses;
 authentication, refusal, malformed/schema/semantic-invalid and security failures do not retry.
+Structured JSON requests explicitly disable Provider thinking and set a bounded completion-token
+limit derived from the application output-character boundary. The Adapter rejects non-stop
+finishes, non-empty reasoning content, oversized content, and malformed response envelopes before
+application validation or persistence.
 
 `make provider-live-smoke` is deliberately excluded from CI and `make check`. It requires
 `ALLOW_PROVIDER_LIVE_SMOKE=1`, `MODEL_PROVIDER=deepseek`, and an explicit local key, and can

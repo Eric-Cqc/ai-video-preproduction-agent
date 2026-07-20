@@ -9,6 +9,8 @@ DEEPSEEK_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions"
 DEEPSEEK_PROVIDER_ID = "deepseek"
 DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
 SAFE_USER_AGENT = "ai-video-preproduction-agent/0.1"
+DEEPSEEK_MAX_COMPLETION_TOKENS = 8_192
+DEEPSEEK_MIN_COMPLETION_TOKENS = 256
 
 
 class ProviderOutcomeStatus(StrEnum):
@@ -75,11 +77,17 @@ class DeepSeekProvider:
         )
 
     def complete(self, request: ModelRequest) -> ProviderOutcome:
-        if request.allow_tools or len(request.input_text.encode()) > self._max_input_bytes:
+        if (
+            request.allow_tools
+            or request.max_output_characters <= 0
+            or len(request.input_text.encode()) > self._max_input_bytes
+        ):
             return ProviderOutcome(ProviderOutcomeStatus.ERROR)
         payload = {
             "model": self.model_id,
             "response_format": {"type": "json_object"},
+            "thinking": {"type": "disabled"},
+            "max_tokens": _completion_token_limit(request.max_output_characters),
             "stream": False,
             "messages": [
                 {"role": "system", "content": request.instructions},
@@ -119,10 +127,16 @@ class DeepSeekProvider:
             try:
                 body = response.json()
                 choices = body["choices"]
-                message = choices[0]["message"]
+                choice = choices[0]
+                message = choice["message"]
                 content = message["content"]
                 usage = body.get("usage", {})
-                if not isinstance(content, str):
+                if (
+                    choice.get("finish_reason") != "stop"
+                    or message.get("reasoning_content") not in {None, ""}
+                    or not isinstance(content, str)
+                    or len(content) > request.max_output_characters
+                ):
                     raise ValueError
                 return ProviderOutcome(
                     ProviderOutcomeStatus.SUCCESS,
@@ -134,6 +148,14 @@ class DeepSeekProvider:
             except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
                 return ProviderOutcome(ProviderOutcomeStatus.ERROR)
         return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+
+
+def _completion_token_limit(max_output_characters: int) -> int:
+    estimated_tokens = (max_output_characters + 3) // 4
+    return min(
+        DEEPSEEK_MAX_COMPLETION_TOKENS,
+        max(DEEPSEEK_MIN_COMPLETION_TOKENS, estimated_tokens),
+    )
 
 
 def _bounded_usage(value: object) -> int | None:
