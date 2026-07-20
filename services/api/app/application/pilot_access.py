@@ -32,7 +32,7 @@ def session_is_valid(value: str | None, secret: str, *, now: int | None = None) 
         expiry = int(expires_at)
     except ValueError:
         return False
-    if expiry < (now if now is not None else int(time.time())):
+    if expiry <= (now if now is not None else int(time.time())):
         return False
     payload = f"{version}.{expires_at}"
     expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -67,3 +67,7 @@ class FailedAccessLimiter:
             ]
             attempts.append(current)
             self._attempts[client_key] = attempts
+
+    def reset(self, client_key: str) -> None:
+        with self._lock:
+            self._attempts.pop(client_key, None)

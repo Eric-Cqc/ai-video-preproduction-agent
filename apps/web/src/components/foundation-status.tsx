@@ -28,12 +28,16 @@ const stages = [
 ] as const;
 
 const contextStorageKey = "production-desk-context";
+const emptyContext: LocalWorkspaceContext = {
+  actorSubject: "",
+  organizationId: "",
+  workspaceId: "",
+};
 
 function loadStoredContext(): LocalWorkspaceContext {
-  const fallback = { actorSubject: "", organizationId: "", workspaceId: "" };
-  if (typeof window === "undefined") return fallback;
+  if (typeof window === "undefined") return emptyContext;
   const saved = window.localStorage.getItem(contextStorageKey);
-  if (!saved) return fallback;
+  if (!saved) return emptyContext;
   try {
     const value = JSON.parse(saved) as Partial<LocalWorkspaceContext>;
     if (
@@ -46,7 +50,7 @@ function loadStoredContext(): LocalWorkspaceContext {
   } catch {
     window.localStorage.removeItem(contextStorageKey);
   }
-  return fallback;
+  return emptyContext;
 }
 
 function newIdempotencyKey(): string {
@@ -67,6 +71,30 @@ function messageFor(error: unknown): string {
     return "请检查输入内容是否完整。";
   }
   return "操作未完成。请稍后重试。";
+}
+
+async function pilotAccessErrorMessage(response: Response): Promise<string> {
+  const body: unknown = await response.json().catch(() => null);
+  const code =
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "object" &&
+    body.error !== null &&
+    "code" in body.error &&
+    typeof body.error.code === "string"
+      ? body.error.code
+      : null;
+  if (code === "pilot_access_invalid_credential" || response.status === 401) {
+    return "访问凭据无效，请核对后重试。";
+  }
+  if (code === "pilot_access_rate_limited" || response.status === 429) {
+    return "尝试次数过多，请等待几分钟后使用正确凭据重试。";
+  }
+  if (response.status === 422) {
+    return "访问凭据格式不正确，请重新输入。";
+  }
+  return "访问服务暂时不可用，请稍后重试。";
 }
 
 function StageRail({ active }: { active: string }) {
@@ -170,6 +198,7 @@ export function FoundationStatus({
   } | null>(null);
   const [pilotPassword, setPilotPassword] = useState("");
   const [pilotReady, setPilotReady] = useState(!hostedPilot);
+  const [pilotSubmitting, setPilotSubmitting] = useState(false);
   const client = useMemo(
     () => createProductClient(apiBaseUrl, context, fetch, !hostedPilot),
     [apiBaseUrl, context, hostedPilot],
@@ -208,19 +237,54 @@ export function FoundationStatus({
 
   async function grantPilotAccess(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await fetch(new URL("/api/v1/pilot-access", apiBaseUrl), {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: pilotPassword }),
-    });
-    if (!response.ok) {
-      setNotice(response.status === 429 ? "请稍后再试。" : "访问凭据无效。");
-      return;
+    if (pilotSubmitting) return;
+    setPilotSubmitting(true);
+    try {
+      const response = await fetch(
+        new URL("/api/v1/pilot-access", apiBaseUrl),
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: pilotPassword }),
+        },
+      );
+      if (!response.ok) {
+        setNotice(await pilotAccessErrorMessage(response));
+        return;
+      }
+      setPilotPassword("");
+      await loadPilotContext();
+      setNotice("已进入私有试点工作台。");
+    } catch {
+      setNotice("无法连接访问服务，请检查网络后重试。");
+    } finally {
+      setPilotSubmitting(false);
     }
-    setPilotPassword("");
-    await loadPilotContext();
-    setNotice("已进入私有试点工作台。");
+  }
+
+  async function revokePilotAccess() {
+    if (pilotSubmitting) return;
+    setPilotSubmitting(true);
+    try {
+      const response = await fetch(
+        new URL("/api/v1/pilot-access/logout", apiBaseUrl),
+        {
+          method: "POST",
+          credentials: "same-origin",
+        },
+      );
+      if (!response.ok) throw new Error("pilot logout failed");
+      setPilotReady(false);
+      setContext(emptyContext);
+      setProjects([]);
+      setSelected(null);
+      setNotice("已安全退出私有试点。");
+    } catch {
+      setNotice("退出未完成，请检查网络后重试。");
+    } finally {
+      setPilotSubmitting(false);
+    }
   }
 
   async function loadProjects() {
@@ -331,6 +395,7 @@ export function FoundationStatus({
           {hostedPilot && !pilotReady ? (
             <form
               className="project-form"
+              aria-busy={pilotSubmitting}
               onSubmit={(event) => void grantPilotAccess(event)}
             >
               <label>
@@ -342,8 +407,12 @@ export function FoundationStatus({
                   autoComplete="current-password"
                 />
               </label>
-              <button className="button" type="submit">
-                进入试点
+              <button
+                className="button"
+                type="submit"
+                disabled={pilotSubmitting || pilotPassword.length === 0}
+              >
+                {pilotSubmitting ? "正在验证…" : "进入试点"}
               </button>
             </form>
           ) : null}
@@ -360,6 +429,16 @@ export function FoundationStatus({
             >
               {busy ? "处理中…" : "刷新项目"}
             </button>
+            {hostedPilot && pilotReady ? (
+              <button
+                className="button secondary"
+                type="button"
+                disabled={pilotSubmitting}
+                onClick={() => void revokePilotAccess()}
+              >
+                {pilotSubmitting ? "正在退出…" : "退出"}
+              </button>
+            ) : null}
           </div>
           <p className="notice" role="status">
             {notice}
