@@ -27,6 +27,11 @@ environment only into the API service. The Web service receives an explicit allo
 non-secret runtime values and must not receive Provider keys, the pilot password, the session
 secret, or PostgreSQL credentials.
 
+The API joins the private application network and a dedicated Provider-egress network. The latter
+permits the approved server-side DeepSeek HTTPS call without publishing an API port. PostgreSQL
+and Web remain private-network-only, while Caddy alone joins the public ingress network. Do not
+attach PostgreSQL or Web to the Provider-egress network and do not publish the API container.
+
 ## Commands
 
 Run these commands from the repository root:

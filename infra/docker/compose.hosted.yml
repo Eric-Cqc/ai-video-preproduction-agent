@@ -36,7 +36,7 @@ services:
     restart: unless-stopped
     volumes:
       - application_files:/var/lib/ai-video-preproduction
-    networks: [internal]
+    networks: [internal, provider_egress]
 
   web:
     build:
@@ -75,6 +75,7 @@ services:
 networks:
   internal:
     internal: true
+  provider_egress: {}
   public: {}
 
 volumes:

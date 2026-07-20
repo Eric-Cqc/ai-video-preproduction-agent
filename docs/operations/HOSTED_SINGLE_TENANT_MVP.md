@@ -19,6 +19,9 @@ password gate uses `PILOT_ACCESS_PASSWORD` and a signed HTTP-only cookie using
 Only the API container receives the complete host environment file. The Web container receives
 an explicit non-secret runtime allowlist and must not contain the Provider key, pilot password,
 session secret, or PostgreSQL credentials.
+The API alone also joins a dedicated outbound network for the approved DeepSeek HTTPS endpoint;
+this does not publish an API port. PostgreSQL and Web stay on the internal network, and Caddy
+remains the only public ingress service.
 
 Run `make hosted-build`, `make hosted-up`, and `make hosted-bootstrap`. The bootstrap is
 idempotent: it creates only the configured Organization, Workspace and owner actor, and rejects
