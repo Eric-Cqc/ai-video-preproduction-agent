@@ -164,7 +164,7 @@ export function createProductClient(
           external_record_id: null,
           declared_created_at: null,
         },
-        "source",
+        `source-${checksum}`,
       );
       const assetId = id(asset, "source_asset", "id");
       const versionId = id(asset, "current_version", "id");
@@ -175,7 +175,7 @@ export function createProductClient(
           method: "POST",
           headers: {
             "content-type": "application/octet-stream",
-            "Idempotency-Key": key("upload"),
+            "Idempotency-Key": key(`upload-${versionId}`),
           },
           body: bytes,
         },
@@ -184,14 +184,14 @@ export function createProductClient(
       const extraction = await post<unknown>(
         `${root}/source-assets/${assetId}/versions/${versionId}/extractions`,
         {},
-        "parse",
+        `parse-${versionId}`,
       );
       const extractionId = id(extraction, "extraction", "id");
       onStep("提取并接受 Brief");
       const run = await post<unknown>(
         `${root}/source-assets/${assetId}/versions/${versionId}/extractions/${extractionId}/brief-extraction-runs`,
         {},
-        "extract",
+        `extract-${extractionId}`,
       );
       const runId = id(run, "run_id");
       const candidate = await request<unknown>(
@@ -206,7 +206,7 @@ export function createProductClient(
           accepted_content: field(candidate, "candidate"),
           title: file.name,
         },
-        "accept",
+        `accept-${runId}`,
       );
       const briefId = id(accepted, "brief_id");
       const briefVersionId = id(accepted, "brief_version_id");
@@ -214,7 +214,7 @@ export function createProductClient(
       const concepts = await post<unknown>(
         `${root}/briefs/${briefId}/versions/${briefVersionId}/concept-runs`,
         {},
-        "concepts",
+        `concepts-${briefVersionId}`,
       );
       const conceptRunId = id(concepts, "run", "id");
       const candidates = field(concepts, "candidates");
@@ -223,14 +223,14 @@ export function createProductClient(
       await post<unknown>(
         `${root}/concept-runs/${conceptRunId}/candidates/${id(candidates[0], "id")}/select`,
         {},
-        "select",
+        `select-${id(candidates[0], "id")}`,
       );
       onStep("生成 Script、Storyboard 与 Shot Plan");
       const scriptId = id(
         await post<unknown>(
           `${root}/concept-runs/${conceptRunId}/scripts`,
           {},
-          "script",
+          `script-${conceptRunId}`,
         ),
         "script_version_id",
       );
@@ -238,7 +238,7 @@ export function createProductClient(
         await post<unknown>(
           `${root}/scripts/${scriptId}/storyboards`,
           { provider_mode: "valid" },
-          "storyboard",
+          `storyboard-${scriptId}`,
         ),
         "version",
         "id",
@@ -247,7 +247,7 @@ export function createProductClient(
         await post<unknown>(
           `${root}/storyboards/${storyboardId}/shot-plans`,
           { provider_mode: "valid" },
-          "shots",
+          `shots-${storyboardId}`,
         ),
         "version",
         "id",
@@ -265,7 +265,7 @@ export function createProductClient(
             summary: "Approved in deterministic local workflow.",
             requested_changes: {},
           },
-          "review",
+          `review-${shotPlanId}`,
         ),
         "review",
         "id",
@@ -279,7 +279,7 @@ export function createProductClient(
             shot_plan_version_id: shotPlanId,
             approval_review_id: reviewId,
           },
-          "delivery",
+          `delivery-${reviewId}`,
         ),
         "package",
         "id",
@@ -288,7 +288,7 @@ export function createProductClient(
       const exported = await post<unknown>(
         `${root}/delivery-packages/${packageId}/exports`,
         { format: "delivery-package.zip" },
-        "export",
+        `export-${packageId}`,
       );
       const exportId = id(exported, "export", "id");
       const filename = id(exported, "export", "filename");
