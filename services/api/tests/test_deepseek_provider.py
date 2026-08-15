@@ -5,7 +5,9 @@ import pytest
 from pydantic import ValidationError
 
 from services.api.app.application.model_provider import (
+    DEEPSEEK_BASE_URL,
     DEEPSEEK_COMPLETIONS_URL,
+    DEEPSEEK_MODEL_ID,
     DeepSeekProvider,
     ModelRequest,
     ProviderOutcomeStatus,
@@ -20,11 +22,14 @@ def _request() -> ModelRequest:
 def _provider(handler: httpx.MockTransport) -> DeepSeekProvider:
     return DeepSeekProvider(
         api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
         timeout_seconds=1,
         max_attempts=2,
         max_input_bytes=1024,
         max_output_bytes=1024,
         transport=handler,
+        sleeper=lambda _: None,
     )
 
 
@@ -41,6 +46,7 @@ def test_deepseek_request_is_fixed_json_only_and_server_owned() -> None:
         return httpx.Response(
             200,
             json={
+                "id": "req_fixture_123",
                 "choices": [{"message": {"content": "{}"}}],
                 "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
             },
@@ -49,6 +55,54 @@ def test_deepseek_request_is_fixed_json_only_and_server_owned() -> None:
     outcome = _provider(httpx.MockTransport(handler)).complete(_request())
     assert outcome.status is ProviderOutcomeStatus.SUCCESS
     assert (outcome.input_tokens, outcome.output_tokens, outcome.total_tokens) == (1, 2, 3)
+    assert outcome.provider_request_id == "req_fixture_123"
+
+
+def test_deepseek_server_supplied_approved_values_flow_to_request() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["model"] = json.loads(request.content)["model"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    provider = DeepSeekProvider(
+        api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
+        timeout_seconds=1,
+        max_attempts=1,
+        max_input_bytes=1024,
+        max_output_bytes=1024,
+        transport=httpx.MockTransport(handler),
+    )
+
+    provider.complete(_request())
+
+    assert seen == {"url": DEEPSEEK_COMPLETIONS_URL, "model": DEEPSEEK_MODEL_ID}
+
+
+@pytest.mark.parametrize(
+    ("base_url", "model_id", "message"),
+    [
+        ("http://api.deepseek.com", DEEPSEEK_MODEL_ID, "approved HTTPS origin"),
+        ("https://evil.example", DEEPSEEK_MODEL_ID, "approved HTTPS origin"),
+        (DEEPSEEK_BASE_URL, "other-model", "model ID must be deepseek-v4-flash"),
+    ],
+)
+def test_deepseek_rejects_disallowed_origin_or_model(
+    base_url: str, model_id: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        DeepSeekProvider(
+            api_key="test-key-not-a-secret",
+            base_url=base_url,
+            model_id=model_id,
+            timeout_seconds=1,
+            max_attempts=1,
+            max_input_bytes=1024,
+            max_output_bytes=1024,
+        )
 
 
 @pytest.mark.parametrize("status", [401, 403])
@@ -82,6 +136,97 @@ def test_deepseek_retries_transient_failure_with_bound() -> None:
         is ProviderOutcomeStatus.SUCCESS
     )
     assert calls == 2
+
+
+def test_deepseek_retries_with_bounded_backoff() -> None:
+    calls = 0
+    sleeps: list[float] = []
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            503 if calls == 1 else 200, json={"choices": [{"message": {"content": "{}"}}]}
+        )
+
+    provider = DeepSeekProvider(
+        api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
+        timeout_seconds=10,
+        max_attempts=2,
+        max_input_bytes=1024,
+        max_output_bytes=1024,
+        transport=httpx.MockTransport(handler),
+        sleeper=sleeps.append,
+    )
+
+    assert provider.complete(_request()).status is ProviderOutcomeStatus.SUCCESS
+    assert sleeps == [0.5]
+    assert calls == 2
+
+
+def test_deepseek_honors_retry_after_but_caps_delay() -> None:
+    sleeps: list[float] = []
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429 if calls == 1 else 200,
+            headers={"Retry-After": "10"},
+            json={"choices": [{"message": {"content": "{}"}}]},
+        )
+
+    provider = DeepSeekProvider(
+        api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
+        timeout_seconds=10,
+        max_attempts=2,
+        max_input_bytes=1024,
+        max_output_bytes=1024,
+        transport=httpx.MockTransport(handler),
+        sleeper=sleeps.append,
+    )
+
+    assert provider.complete(_request()).status is ProviderOutcomeStatus.SUCCESS
+    assert sleeps == [5.0]
+
+
+def test_deepseek_does_not_start_second_attempt_after_deadline() -> None:
+    now = 0.0
+    calls = 0
+    sleeps: list[float] = []
+
+    def clock() -> float:
+        return now
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal now, calls
+        calls += 1
+        now = 1.0
+        return httpx.Response(503)
+
+    provider = DeepSeekProvider(
+        api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
+        timeout_seconds=1,
+        max_attempts=2,
+        max_input_bytes=1024,
+        max_output_bytes=1024,
+        transport=httpx.MockTransport(handler),
+        clock=clock,
+        sleeper=sleeps.append,
+    )
+
+    outcome = provider.complete(_request())
+
+    assert outcome.status is ProviderOutcomeStatus.ERROR
+    assert calls == 1
+    assert sleeps == []
 
 
 def test_deepseek_malformed_or_oversized_output_fails_closed() -> None:

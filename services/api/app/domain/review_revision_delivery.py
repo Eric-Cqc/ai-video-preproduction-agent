@@ -178,3 +178,7 @@ class DeliveryOperation:
     completed_at: datetime | None
     correlation_id: str
     version: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None

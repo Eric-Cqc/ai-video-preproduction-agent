@@ -1566,6 +1566,10 @@ class SqlAlchemyBriefExtractionRunRepository:
             document_extraction_id=run.document_extraction_id,
             provider_id=run.provider_id,
             model_id=run.model_id,
+            input_tokens=run.input_tokens,
+            output_tokens=run.output_tokens,
+            total_tokens=run.total_tokens,
+            provider_request_id=run.provider_request_id,
             prompt_template_id=run.prompt_template_id,
             prompt_template_version=run.prompt_template_version,
             input_extraction_checksum=run.input_extraction_checksum,
@@ -2164,6 +2168,10 @@ def _brief_extraction_run(record: BriefExtractionRunRecord) -> BriefExtractionRu
         candidate_issues=record.candidate_issues,
         created_by_actor_subject=record.created_by_actor_subject,
         created_at=record.created_at,
+        input_tokens=record.input_tokens,
+        output_tokens=record.output_tokens,
+        total_tokens=record.total_tokens,
+        provider_request_id=record.provider_request_id,
     )
 
 

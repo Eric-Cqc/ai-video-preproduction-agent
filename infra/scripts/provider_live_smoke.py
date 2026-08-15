@@ -127,6 +127,8 @@ def main() -> None:
     _suppress_transport_info_logs()
     provider = DeepSeekProvider(
         api_key=settings.deepseek_api_key,
+        base_url=settings.deepseek_base_url,
+        model_id=settings.deepseek_model,
         timeout_seconds=settings.deepseek_timeout_seconds,
         max_attempts=1,
         max_input_bytes=LIVE_SMOKE_MAX_INPUT_BYTES,

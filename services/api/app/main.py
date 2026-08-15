@@ -144,6 +144,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     if resolved_settings.model_provider == "deepseek":
         workflow_provider = DeepSeekProvider(
             api_key=resolved_settings.deepseek_api_key or "",
+            base_url=resolved_settings.deepseek_base_url,
+            model_id=resolved_settings.deepseek_model,
             timeout_seconds=resolved_settings.deepseek_timeout_seconds,
             max_attempts=resolved_settings.deepseek_max_attempts,
             max_input_bytes=resolved_settings.deepseek_max_input_bytes,

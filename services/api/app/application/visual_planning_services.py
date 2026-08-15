@@ -3,6 +3,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -12,6 +13,7 @@ from jsonschema import ValidationError
 from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.context import TenantContext
 from services.api.app.application.errors import (
+    ApplicationError,
     InvalidRequest,
     PermissionDenied,
     ResourceConflict,
@@ -23,6 +25,7 @@ from services.api.app.application.model_provider import (
     DeterministicVisualPlanningProvider,
     ModelProviderPort,
     ModelRequest,
+    ProviderOutcome,
     ProviderOutcomeStatus,
 )
 from services.api.app.application.services import (
@@ -52,6 +55,19 @@ TEMPLATE_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
 MAX_OUTPUT = 262_144
 DURATION_TOLERANCE_SECONDS = 1
+STALE_RESERVATION_AGE_SECONDS = 65.0
+FAILED_OPERATION_CODES = frozenset(
+    {
+        "provider_refusal",
+        "provider_timeout",
+        "provider_error",
+        "malformed_output",
+        "schema_invalid",
+        "semantic_invalid",
+        "invalid_request",
+        "input_digest_changed",
+    }
+)
 _CONTINUITY_SHOT_REFERENCE = re.compile(r"(?:shot[- ]|#)(\d+)", re.IGNORECASE)
 
 
@@ -77,11 +93,13 @@ class VisualPlanningApplicationService:
         *,
         clock: Clock = utc_now,
         id_factory: IdFactory = uuid4,
+        stale_reservation_age_seconds: float = STALE_RESERVATION_AGE_SECONDS,
     ) -> None:
         self.uow_factory = uow_factory
         self.provider = provider or DeterministicVisualPlanningProvider()
         self.clock = clock
         self.id_factory = id_factory
+        self.stale_reservation_age_seconds = stale_reservation_age_seconds
         self._briefs = BriefApplicationService(uow_factory, clock=clock, id_factory=id_factory)
 
     def generate_storyboard(
@@ -96,123 +114,152 @@ class VisualPlanningApplicationService:
         if provider_mode not in STORYBOARD_PROVIDER_MODES:
             raise InvalidRequest("provider mode is not permitted", code="invalid_provider_mode")
         with self.uow_factory() as uow:
-            script = self._script_replay_scope(uow, context, project_id, script_version_id)
+            self._require_mutation_access(uow, context, project_id)
+            script = self._require_script(uow, context, project_id, script_version_id)
             digest = self._request_digest(
                 "storyboard", context, script, provider_mode, self.provider
             )
-            self._require_mutation_actor(uow, context, project_id)
-            operation = self._resolve_replay(
-                uow,
-                context,
+            self._validate_script_lineage(uow, context, project_id, script)
+            existing = uow.visual_planning_operations.get_by_key(
+                context.organization_id,
+                context.workspace_id,
                 project_id,
                 VisualPlanningOperationType.GENERATE_STORYBOARD,
                 idempotency_key,
-                digest,
             )
-            if operation is not None:
-                return self._storyboard_replay(uow, context, project_id, operation)
-            self._require_mutation_access(uow, context, project_id)
-            script = self._require_script(uow, context, project_id, script_version_id)
-            self._validate_script_lineage(uow, context, project_id, script)
-            reserved = uow.visual_planning_operations.reserve(
+            if existing is not None:
+                self._check_existing(existing, digest)
+                if existing.status is VisualPlanningOperationStatus.ACCEPTED:
+                    return self._storyboard_replay(uow, context, project_id, existing)
+            operation = self._reserve_or_recover(
+                uow,
                 self._reserve(
                     context,
                     project_id,
                     VisualPlanningOperationType.GENERATE_STORYBOARD,
                     idempotency_key,
                     digest,
+                ),
+            )
+            if operation.status is VisualPlanningOperationStatus.ACCEPTED:
+                return self._storyboard_replay(uow, context, project_id, operation)
+            input_script = script
+
+        try:
+            content, outcome = self._storyboard_content(input_script, provider_mode)
+            self._validate_storyboard_content(content, input_script)
+        except ApplicationError as error:
+            self._finalize_failed(context, project_id, operation, error.code)
+            raise
+
+        failure: ApplicationError | None = None
+        result: StoryboardGenerationResult | None = None
+        with self.uow_factory() as uow:
+            try:
+                self._require_mutation_access(uow, context, project_id)
+                current_script = self._require_script(uow, context, project_id, script_version_id)
+                self._validate_script_lineage(uow, context, project_id, current_script)
+                current_digest = self._request_digest(
+                    "storyboard", context, current_script, provider_mode, self.provider
                 )
-            )
-            if reserved is None:
-                existing = self._resolve_replay(
-                    uow,
-                    context,
-                    project_id,
-                    VisualPlanningOperationType.GENERATE_STORYBOARD,
-                    idempotency_key,
-                    digest,
+                if (
+                    current_digest != digest
+                    or current_script.content_digest != input_script.content_digest
+                ):
+                    raise ResourceConflict(
+                        "storyboard input changed during generation", code="input_digest_changed"
+                    )
+                now = self.clock()
+                run = StoryboardRun(
+                    id=self.id_factory(),
+                    organization_id=context.organization_id,
+                    workspace_id=context.workspace_id,
+                    project_id=project_id,
+                    brief_id=input_script.brief_id,
+                    brief_version_id=input_script.brief_version_id,
+                    concept_run_id=input_script.concept_run_id,
+                    concept_candidate_id=input_script.concept_candidate_id,
+                    concept_selection_id=input_script.concept_selection_id,
+                    script_run_id=input_script.script_run_id,
+                    script_version_id=input_script.id,
+                    script_content_digest=input_script.content_digest,
+                    instruction_template_id=STORYBOARD_TEMPLATE_ID,
+                    instruction_template_version=TEMPLATE_VERSION,
+                    provider_id=self.provider.provider_id,
+                    model_id=self.provider.model_id,
+                    status=CreativeRunStatus.COMPLETED,
+                    failure_category=None,
+                    created_by_actor_subject=context.actor_subject,
+                    created_at=now,
+                    completed_at=now,
+                    version=1,
+                    input_tokens=outcome.input_tokens,
+                    output_tokens=outcome.output_tokens,
+                    total_tokens=outcome.total_tokens,
+                    provider_request_id=outcome.provider_request_id,
                 )
-                if existing is None:
-                    raise ResourceConflict("visual operation reservation could not be resolved")
-                return self._storyboard_replay(uow, context, project_id, existing)
-            content = self._storyboard_content(script, provider_mode)
-            self._validate_storyboard_content(content, script)
-            now = self.clock()
-            run = StoryboardRun(
-                id=self.id_factory(),
-                organization_id=context.organization_id,
-                workspace_id=context.workspace_id,
-                project_id=project_id,
-                brief_id=script.brief_id,
-                brief_version_id=script.brief_version_id,
-                concept_run_id=script.concept_run_id,
-                concept_candidate_id=script.concept_candidate_id,
-                concept_selection_id=script.concept_selection_id,
-                script_run_id=script.script_run_id,
-                script_version_id=script.id,
-                script_content_digest=script.content_digest,
-                instruction_template_id=STORYBOARD_TEMPLATE_ID,
-                instruction_template_version=TEMPLATE_VERSION,
-                provider_id=self.provider.provider_id,
-                model_id=self.provider.model_id,
-                status=CreativeRunStatus.COMPLETED,
-                failure_category=None,
-                created_by_actor_subject=context.actor_subject,
-                created_at=now,
-                completed_at=now,
-                version=1,
-            )
-            version = StoryboardVersion(
-                id=self.id_factory(),
-                organization_id=context.organization_id,
-                workspace_id=context.workspace_id,
-                project_id=project_id,
-                storyboard_run_id=run.id,
-                brief_id=run.brief_id,
-                brief_version_id=run.brief_version_id,
-                concept_run_id=run.concept_run_id,
-                concept_candidate_id=run.concept_candidate_id,
-                concept_selection_id=run.concept_selection_id,
-                script_run_id=run.script_run_id,
-                script_version_id=run.script_version_id,
-                version_number=1,
-                schema_version=SCHEMA_VERSION,
-                content=content,
-                content_digest=_content_digest(content),
-                total_duration_seconds=_storyboard_total(content),
-                scene_count=len(cast(list[object], content["scenes"])),
-                created_at=now,
-            )
-            uow.storyboard_runs.add(run)
-            uow.storyboard_versions.add(version)
-            finalized = replace(
-                reserved,
-                status=VisualPlanningOperationStatus.ACCEPTED,
-                outcome_storyboard_run_id=run.id,
-                outcome_storyboard_version_id=version.id,
-                completed_at=now,
-                version=2,
-            )
-            uow.visual_planning_operations.finalize_accepted(finalized, expected_version=1)
-            uow.audit_events.append(
-                self._audit(
-                    context,
-                    run.id,
-                    "storyboard.generated",
-                    {
-                        "run_id": str(run.id),
-                        "version_id": str(version.id),
-                        "schema_version": version.schema_version,
-                        "scene_count": version.scene_count,
-                        "total_duration_seconds": version.total_duration_seconds,
-                        "provider_id": run.provider_id,
-                        "model_id": run.model_id,
-                        "instruction_template_id": run.instruction_template_id,
-                        "instruction_template_version": run.instruction_template_version,
-                    },
+                version = StoryboardVersion(
+                    id=self.id_factory(),
+                    organization_id=context.organization_id,
+                    workspace_id=context.workspace_id,
+                    project_id=project_id,
+                    storyboard_run_id=run.id,
+                    brief_id=run.brief_id,
+                    brief_version_id=run.brief_version_id,
+                    concept_run_id=run.concept_run_id,
+                    concept_candidate_id=run.concept_candidate_id,
+                    concept_selection_id=run.concept_selection_id,
+                    script_run_id=run.script_run_id,
+                    script_version_id=run.script_version_id,
+                    version_number=1,
+                    schema_version=SCHEMA_VERSION,
+                    content=content,
+                    content_digest=_content_digest(content),
+                    total_duration_seconds=_storyboard_total(content),
+                    scene_count=len(cast(list[object], content["scenes"])),
+                    created_at=now,
                 )
-            )
-            return StoryboardGenerationResult(run, version, False)
+                uow.storyboard_runs.add(run)
+                uow.storyboard_versions.add(version)
+                finalized = replace(
+                    operation,
+                    status=VisualPlanningOperationStatus.ACCEPTED,
+                    outcome_storyboard_run_id=run.id,
+                    outcome_storyboard_version_id=version.id,
+                    completed_at=now,
+                    version=operation.version + 1,
+                    failure_code=None,
+                )
+                uow.visual_planning_operations.finalize_accepted(
+                    finalized, expected_version=operation.version
+                )
+                uow.audit_events.append(
+                    self._audit(
+                        context,
+                        run.id,
+                        "storyboard.generated",
+                        {
+                            "run_id": str(run.id),
+                            "version_id": str(version.id),
+                            "schema_version": version.schema_version,
+                            "scene_count": version.scene_count,
+                            "total_duration_seconds": version.total_duration_seconds,
+                            "provider_id": run.provider_id,
+                            "model_id": run.model_id,
+                            "instruction_template_id": run.instruction_template_id,
+                            "instruction_template_version": run.instruction_template_version,
+                        },
+                    )
+                )
+                result = StoryboardGenerationResult(run, version, False)
+            except ApplicationError as error:
+                self._finalize_failed_uow(uow, context, operation, error.code)
+                failure = error
+        if failure is not None:
+            raise failure
+        if result is None:
+            raise ResourceConflict("visual generation outcome is unavailable")
+        return result
 
     def generate_shot_plan(
         self,
@@ -226,140 +273,175 @@ class VisualPlanningApplicationService:
         if provider_mode not in SHOT_PLAN_PROVIDER_MODES:
             raise InvalidRequest("provider mode is not permitted", code="invalid_provider_mode")
         with self.uow_factory() as uow:
-            storyboard = self._storyboard_replay_scope(
+            self._require_mutation_access(uow, context, project_id)
+            storyboard = self._require_storyboard_version(
                 uow, context, project_id, storyboard_version_id
             )
             digest = self._request_digest(
                 "shot_plan", context, storyboard, provider_mode, self.provider
             )
-            self._require_mutation_actor(uow, context, project_id)
-            operation = self._resolve_replay(
-                uow,
-                context,
+            self._validate_storyboard_lineage(uow, context, project_id, storyboard)
+            existing = uow.visual_planning_operations.get_by_key(
+                context.organization_id,
+                context.workspace_id,
                 project_id,
                 VisualPlanningOperationType.GENERATE_SHOT_PLAN,
                 idempotency_key,
-                digest,
             )
-            if operation is not None:
-                return self._shot_plan_replay(uow, context, project_id, operation)
-            self._require_mutation_access(uow, context, project_id)
-            storyboard = self._require_storyboard_version(
-                uow, context, project_id, storyboard_version_id
-            )
-            self._validate_storyboard_lineage(uow, context, project_id, storyboard)
-            reserved = uow.visual_planning_operations.reserve(
+            if existing is not None:
+                self._check_existing(existing, digest)
+                if existing.status is VisualPlanningOperationStatus.ACCEPTED:
+                    return self._shot_plan_replay(uow, context, project_id, existing)
+            operation = self._reserve_or_recover(
+                uow,
                 self._reserve(
                     context,
                     project_id,
                     VisualPlanningOperationType.GENERATE_SHOT_PLAN,
                     idempotency_key,
                     digest,
-                )
-            )
-            if reserved is None:
-                existing = self._resolve_replay(
-                    uow,
-                    context,
-                    project_id,
-                    VisualPlanningOperationType.GENERATE_SHOT_PLAN,
-                    idempotency_key,
-                    digest,
-                )
-                if existing is None:
-                    raise ResourceConflict("visual operation reservation could not be resolved")
-                return self._shot_plan_replay(uow, context, project_id, existing)
-            content = self._shot_plan_content(storyboard, provider_mode)
-            script = self._require_script(uow, context, project_id, storyboard.script_version_id)
-            self._validate_shot_plan_content(content, storyboard, script)
-            now = self.clock()
-            run = ShotPlanRun(
-                id=self.id_factory(),
-                organization_id=context.organization_id,
-                workspace_id=context.workspace_id,
-                project_id=project_id,
-                storyboard_run_id=storyboard.storyboard_run_id,
-                storyboard_version_id=storyboard.id,
-                script_run_id=storyboard.script_run_id,
-                script_version_id=storyboard.script_version_id,
-                brief_id=storyboard.brief_id,
-                brief_version_id=storyboard.brief_version_id,
-                concept_run_id=storyboard.concept_run_id,
-                concept_candidate_id=storyboard.concept_candidate_id,
-                concept_selection_id=storyboard.concept_selection_id,
-                storyboard_content_digest=storyboard.content_digest,
-                instruction_template_id=SHOT_PLAN_TEMPLATE_ID,
-                instruction_template_version=TEMPLATE_VERSION,
-                provider_id=self.provider.provider_id,
-                model_id=self.provider.model_id,
-                status=CreativeRunStatus.COMPLETED,
-                failure_category=None,
-                created_by_actor_subject=context.actor_subject,
-                created_at=now,
-                completed_at=now,
-                version=1,
-            )
-            version = ShotPlanVersion(
-                id=self.id_factory(),
-                organization_id=context.organization_id,
-                workspace_id=context.workspace_id,
-                project_id=project_id,
-                shot_plan_run_id=run.id,
-                storyboard_run_id=run.storyboard_run_id,
-                storyboard_version_id=run.storyboard_version_id,
-                script_run_id=run.script_run_id,
-                script_version_id=run.script_version_id,
-                brief_id=run.brief_id,
-                brief_version_id=run.brief_version_id,
-                concept_run_id=run.concept_run_id,
-                concept_candidate_id=run.concept_candidate_id,
-                concept_selection_id=run.concept_selection_id,
-                version_number=1,
-                schema_version=SCHEMA_VERSION,
-                content=content,
-                content_digest=_content_digest(content),
-                total_duration_seconds=_shot_plan_total(content),
-                scene_count=len(
-                    {
-                        _as_int(item.get("storyboard_scene_number"), 0)
-                        for item in cast(list[object], content["shots"])
-                        if isinstance(item, dict)
-                    }
                 ),
-                shot_count=len(cast(list[object], content["shots"])),
-                created_at=now,
             )
-            uow.shot_plan_runs.add(run)
-            uow.shot_plan_versions.add(version)
-            finalized = replace(
-                reserved,
-                status=VisualPlanningOperationStatus.ACCEPTED,
-                outcome_shot_plan_run_id=run.id,
-                outcome_shot_plan_version_id=version.id,
-                completed_at=now,
-                version=2,
+            if operation.status is VisualPlanningOperationStatus.ACCEPTED:
+                return self._shot_plan_replay(uow, context, project_id, operation)
+            input_storyboard = storyboard
+            input_script = self._require_script(
+                uow, context, project_id, input_storyboard.script_version_id
             )
-            uow.visual_planning_operations.finalize_accepted(finalized, expected_version=1)
-            uow.audit_events.append(
-                self._audit(
-                    context,
-                    run.id,
-                    "shot_plan.generated",
-                    {
-                        "run_id": str(run.id),
-                        "version_id": str(version.id),
-                        "schema_version": version.schema_version,
-                        "scene_count": version.scene_count,
-                        "shot_count": version.shot_count,
-                        "total_duration_seconds": version.total_duration_seconds,
-                        "provider_id": run.provider_id,
-                        "model_id": run.model_id,
-                        "instruction_template_id": run.instruction_template_id,
-                        "instruction_template_version": run.instruction_template_version,
-                    },
+
+        try:
+            content, outcome = self._shot_plan_content(input_storyboard, provider_mode)
+            self._validate_shot_plan_content(content, input_storyboard, input_script)
+        except ApplicationError as error:
+            self._finalize_failed(context, project_id, operation, error.code)
+            raise
+
+        failure: ApplicationError | None = None
+        result: ShotPlanGenerationResult | None = None
+        with self.uow_factory() as uow:
+            try:
+                self._require_mutation_access(uow, context, project_id)
+                current_storyboard = self._require_storyboard_version(
+                    uow, context, project_id, storyboard_version_id
                 )
-            )
-            return ShotPlanGenerationResult(run, version, False)
+                self._validate_storyboard_lineage(uow, context, project_id, current_storyboard)
+                current_script = self._require_script(
+                    uow, context, project_id, current_storyboard.script_version_id
+                )
+                current_digest = self._request_digest(
+                    "shot_plan", context, current_storyboard, provider_mode, self.provider
+                )
+                if (
+                    current_digest != digest
+                    or current_storyboard.content_digest != input_storyboard.content_digest
+                    or current_script.content_digest != input_script.content_digest
+                ):
+                    raise ResourceConflict(
+                        "shot plan input changed during generation", code="input_digest_changed"
+                    )
+                now = self.clock()
+                run = ShotPlanRun(
+                    id=self.id_factory(),
+                    organization_id=context.organization_id,
+                    workspace_id=context.workspace_id,
+                    project_id=project_id,
+                    storyboard_run_id=input_storyboard.storyboard_run_id,
+                    storyboard_version_id=input_storyboard.id,
+                    script_run_id=input_storyboard.script_run_id,
+                    script_version_id=input_storyboard.script_version_id,
+                    brief_id=input_storyboard.brief_id,
+                    brief_version_id=input_storyboard.brief_version_id,
+                    concept_run_id=input_storyboard.concept_run_id,
+                    concept_candidate_id=input_storyboard.concept_candidate_id,
+                    concept_selection_id=input_storyboard.concept_selection_id,
+                    storyboard_content_digest=input_storyboard.content_digest,
+                    instruction_template_id=SHOT_PLAN_TEMPLATE_ID,
+                    instruction_template_version=TEMPLATE_VERSION,
+                    provider_id=self.provider.provider_id,
+                    model_id=self.provider.model_id,
+                    status=CreativeRunStatus.COMPLETED,
+                    failure_category=None,
+                    created_by_actor_subject=context.actor_subject,
+                    created_at=now,
+                    completed_at=now,
+                    version=1,
+                    input_tokens=outcome.input_tokens,
+                    output_tokens=outcome.output_tokens,
+                    total_tokens=outcome.total_tokens,
+                    provider_request_id=outcome.provider_request_id,
+                )
+                version = ShotPlanVersion(
+                    id=self.id_factory(),
+                    organization_id=context.organization_id,
+                    workspace_id=context.workspace_id,
+                    project_id=project_id,
+                    shot_plan_run_id=run.id,
+                    storyboard_run_id=run.storyboard_run_id,
+                    storyboard_version_id=run.storyboard_version_id,
+                    script_run_id=run.script_run_id,
+                    script_version_id=run.script_version_id,
+                    brief_id=run.brief_id,
+                    brief_version_id=run.brief_version_id,
+                    concept_run_id=run.concept_run_id,
+                    concept_candidate_id=run.concept_candidate_id,
+                    concept_selection_id=run.concept_selection_id,
+                    version_number=1,
+                    schema_version=SCHEMA_VERSION,
+                    content=content,
+                    content_digest=_content_digest(content),
+                    total_duration_seconds=_shot_plan_total(content),
+                    scene_count=len(
+                        {
+                            _as_int(item.get("storyboard_scene_number"), 0)
+                            for item in cast(list[object], content["shots"])
+                            if isinstance(item, dict)
+                        }
+                    ),
+                    shot_count=len(cast(list[object], content["shots"])),
+                    created_at=now,
+                )
+                uow.shot_plan_runs.add(run)
+                uow.shot_plan_versions.add(version)
+                finalized = replace(
+                    operation,
+                    status=VisualPlanningOperationStatus.ACCEPTED,
+                    outcome_shot_plan_run_id=run.id,
+                    outcome_shot_plan_version_id=version.id,
+                    completed_at=now,
+                    version=operation.version + 1,
+                    failure_code=None,
+                )
+                uow.visual_planning_operations.finalize_accepted(
+                    finalized, expected_version=operation.version
+                )
+                uow.audit_events.append(
+                    self._audit(
+                        context,
+                        run.id,
+                        "shot_plan.generated",
+                        {
+                            "run_id": str(run.id),
+                            "version_id": str(version.id),
+                            "schema_version": version.schema_version,
+                            "scene_count": version.scene_count,
+                            "shot_count": version.shot_count,
+                            "total_duration_seconds": version.total_duration_seconds,
+                            "provider_id": run.provider_id,
+                            "model_id": run.model_id,
+                            "instruction_template_id": run.instruction_template_id,
+                            "instruction_template_version": run.instruction_template_version,
+                        },
+                    )
+                )
+                result = ShotPlanGenerationResult(run, version, False)
+            except ApplicationError as error:
+                self._finalize_failed_uow(uow, context, operation, error.code)
+                failure = error
+        if failure is not None:
+            raise failure
+        if result is None:
+            raise ResourceConflict("visual generation outcome is unavailable")
+        return result
 
     def get_storyboard_run(
         self, context: TenantContext, project_id: UUID, run_id: UUID
@@ -409,7 +491,9 @@ class VisualPlanningApplicationService:
                 raise ResourceNotFound("shot plan version is not accessible")
             return value
 
-    def _storyboard_content(self, script: ScriptVersion, mode: str) -> dict[str, object]:
+    def _storyboard_content(
+        self, script: ScriptVersion, mode: str
+    ) -> tuple[dict[str, object], ProviderOutcome]:
         provider = (
             DeterministicVisualPlanningProvider(mode)
             if isinstance(self.provider, DeterministicVisualPlanningProvider)
@@ -430,9 +514,11 @@ class VisualPlanningApplicationService:
                 False,
             )
         )
-        return self._decode_provider(outcome.status, outcome.output_text)
+        return self._decode_provider(outcome.status, outcome.output_text), outcome
 
-    def _shot_plan_content(self, storyboard: StoryboardVersion, mode: str) -> dict[str, object]:
+    def _shot_plan_content(
+        self, storyboard: StoryboardVersion, mode: str
+    ) -> tuple[dict[str, object], ProviderOutcome]:
         provider = (
             DeterministicVisualPlanningProvider(mode)
             if isinstance(self.provider, DeterministicVisualPlanningProvider)
@@ -453,14 +539,14 @@ class VisualPlanningApplicationService:
                 False,
             )
         )
-        return self._decode_provider(outcome.status, outcome.output_text)
+        return self._decode_provider(outcome.status, outcome.output_text), outcome
 
     @staticmethod
     def _decode_provider(status: ProviderOutcomeStatus, output: str | None) -> dict[str, object]:
         if status is not ProviderOutcomeStatus.SUCCESS:
             mapping = {
-                ProviderOutcomeStatus.REFUSAL: "refusal",
-                ProviderOutcomeStatus.TIMEOUT: "timeout",
+                ProviderOutcomeStatus.REFUSAL: "provider_refusal",
+                ProviderOutcomeStatus.TIMEOUT: "provider_timeout",
                 ProviderOutcomeStatus.ERROR: "provider_error",
             }
             raise InvalidRequest("visual provider failed", code=mapping[status])
@@ -594,6 +680,114 @@ class VisualPlanningApplicationService:
                                 "shot plan continuity is invalid", code="semantic_invalid"
                             )
 
+    def _check_existing(self, operation: VisualPlanningOperation, digest: str) -> None:
+        if operation.request_digest != digest:
+            raise ResourceConflict(
+                "idempotency key was used for a different request", code="idempotency_conflict"
+            )
+        if operation.status is VisualPlanningOperationStatus.FAILED:
+            raise ResourceConflict(
+                "visual operation failed",
+                code=operation.failure_code or "provider_error",
+            )
+
+    def _reserve_or_recover(
+        self,
+        uow: UnitOfWork,
+        reservation: VisualPlanningOperation,
+    ) -> VisualPlanningOperation:
+        existing = uow.visual_planning_operations.get_by_key(
+            reservation.organization_id,
+            reservation.workspace_id,
+            reservation.project_id,
+            reservation.operation,
+            reservation.idempotency_key,
+        )
+        if existing is None:
+            saved = uow.visual_planning_operations.reserve(reservation)
+            if saved is not None:
+                return saved
+            existing = uow.visual_planning_operations.get_by_key(
+                reservation.organization_id,
+                reservation.workspace_id,
+                reservation.project_id,
+                reservation.operation,
+                reservation.idempotency_key,
+            )
+            if existing is None:
+                raise ResourceConflict("visual operation reservation could not be resolved")
+        self._check_existing(existing, reservation.request_digest)
+        if existing.status is VisualPlanningOperationStatus.ACCEPTED:
+            return existing
+        if not self._is_stale(existing.submitted_at):
+            raise ResourceConflict("visual operation is already in progress")
+        recovered = replace(
+            reservation,
+            id=existing.id,
+            submitted_at=self.clock(),
+            version=existing.version + 1,
+        )
+        saved = uow.visual_planning_operations.takeover(
+            recovered, expected_version=existing.version
+        )
+        if saved is None:
+            raise ResourceConflict("visual operation changed before stale recovery")
+        return saved
+
+    def _is_stale(self, submitted_at: datetime) -> bool:
+        return (self.clock() - submitted_at).total_seconds() >= self.stale_reservation_age_seconds
+
+    def _finalize_failed(
+        self,
+        context: TenantContext,
+        project_id: UUID,
+        operation: VisualPlanningOperation,
+        failure_code: str,
+    ) -> None:
+        with self.uow_factory() as uow:
+            self._require_mutation_access(uow, context, project_id)
+            self._finalize_failed_uow(uow, context, operation, failure_code)
+
+    def _finalize_failed_uow(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        operation: VisualPlanningOperation,
+        failure_code: str,
+    ) -> None:
+        now = self.clock()
+        failed = replace(
+            operation,
+            status=VisualPlanningOperationStatus.FAILED,
+            outcome_storyboard_run_id=None,
+            outcome_storyboard_version_id=None,
+            outcome_shot_plan_run_id=None,
+            outcome_shot_plan_version_id=None,
+            completed_at=now,
+            version=operation.version + 1,
+            failure_code=self._bounded_failure_code(failure_code),
+        )
+        uow.visual_planning_operations.finalize_failed(failed, expected_version=operation.version)
+        action = (
+            "storyboard.failed"
+            if operation.operation is VisualPlanningOperationType.GENERATE_STORYBOARD
+            else "shot_plan.failed"
+        )
+        uow.audit_events.append(
+            self._audit(
+                context,
+                operation.id,
+                action,
+                {"operation_id": str(operation.id), "error_code": failed.failure_code},
+            )
+        )
+
+    @staticmethod
+    def _bounded_failure_code(failure_code: str) -> str:
+        if failure_code in FAILED_OPERATION_CODES:
+            return failure_code
+        return "provider_error"
+
     def _script_replay_scope(
         self, uow: UnitOfWork, context: TenantContext, project_id: UUID, version_id: UUID
     ) -> ScriptVersion:
@@ -706,6 +900,11 @@ class VisualPlanningApplicationService:
             )
         if existing.status is VisualPlanningOperationStatus.RESERVED:
             raise ResourceConflict("visual operation is not complete")
+        if existing.status is VisualPlanningOperationStatus.FAILED:
+            raise ResourceConflict(
+                "visual operation failed",
+                code=existing.failure_code or "provider_error",
+            )
         return existing
 
     def _storyboard_replay(

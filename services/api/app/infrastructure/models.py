@@ -1402,6 +1402,10 @@ class BriefExtractionRunRecord(Base):
     document_extraction_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     provider_id: Mapped[str] = mapped_column(String(60), nullable=False)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     prompt_template_id: Mapped[str] = mapped_column(String(80), nullable=False)
     prompt_template_version: Mapped[str] = mapped_column(String(20), nullable=False)
     input_extraction_checksum: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1613,6 +1617,10 @@ class CreativeConceptRunRecord(Base):
     instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
@@ -1807,6 +1815,10 @@ class ScriptRunRecord(Base):
     instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -1962,17 +1974,24 @@ class CreativeGenerationOperationRecord(Base):
             "'generate_script')",
             name="ck_creative_operation_type",
         ),
-        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_creative_operation_status"),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted', 'failed')", name="ck_creative_operation_status"
+        ),
         CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_creative_operation_digest"),
         CheckConstraint(
-            "(status='reserved' AND completed_at IS NULL AND outcome_concept_run_id IS NULL "
+            "(status='reserved' AND completed_at IS NULL AND failure_code IS NULL "
+            "AND outcome_concept_run_id IS NULL "
             "AND outcome_candidate_id IS NULL AND outcome_selection_id IS NULL "
             "AND outcome_script_run_id IS NULL AND outcome_script_version_id IS NULL) OR "
-            "(status='accepted' AND completed_at IS NOT NULL AND ((operation="
+            "(status='accepted' AND completed_at IS NOT NULL AND failure_code IS NULL AND ((operation="
             "'generate_creative_concepts' AND outcome_concept_run_id IS NOT NULL) OR "
             "(operation='select_creative_concept' AND outcome_selection_id IS NOT NULL "
             "AND outcome_candidate_id IS NOT NULL) OR (operation='generate_script' "
-            "AND outcome_script_run_id IS NOT NULL AND outcome_script_version_id IS NOT NULL)))",
+            "AND outcome_script_run_id IS NOT NULL AND outcome_script_version_id IS NOT NULL))) OR "
+            "(status='failed' AND completed_at IS NOT NULL AND failure_code IS NOT NULL "
+            "AND outcome_concept_run_id IS NULL AND outcome_candidate_id IS NULL "
+            "AND outcome_selection_id IS NULL AND outcome_script_run_id IS NULL "
+            "AND outcome_script_version_id IS NULL)",
             name="ck_creative_operation_outcome",
         ),
     )
@@ -1994,6 +2013,7 @@ class CreativeGenerationOperationRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    failure_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class StoryboardRunRecord(Base):
@@ -2075,6 +2095,10 @@ class StoryboardRunRecord(Base):
     instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -2255,6 +2279,10 @@ class ShotPlanRunRecord(Base):
     instruction_template_version: Mapped[str] = mapped_column(String(30), nullable=False)
     provider_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     failure_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -2404,20 +2432,26 @@ class VisualPlanningOperationRecord(Base):
             "operation IN ('generate_storyboard', 'generate_shot_plan')",
             name="ck_visual_operation_type",
         ),
-        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_visual_operation_status"),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted', 'failed')", name="ck_visual_operation_status"
+        ),
         CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_visual_operation_digest"),
         CheckConstraint("version >= 1", name="ck_visual_operation_version"),
         CheckConstraint(
-            "(status='reserved' AND completed_at IS NULL AND outcome_storyboard_run_id IS NULL "
+            "(status='reserved' AND completed_at IS NULL AND failure_code IS NULL "
+            "AND outcome_storyboard_run_id IS NULL "
             "AND outcome_storyboard_version_id IS NULL AND outcome_shot_plan_run_id IS NULL "
             "AND outcome_shot_plan_version_id IS NULL) OR (status='accepted' "
-            "AND completed_at IS NOT NULL "
+            "AND completed_at IS NOT NULL AND failure_code IS NULL "
             "AND ((operation='generate_storyboard' AND outcome_storyboard_run_id IS NOT NULL "
             "AND outcome_storyboard_version_id IS NOT NULL AND outcome_shot_plan_run_id IS NULL "
             "AND outcome_shot_plan_version_id IS NULL) OR (operation='generate_shot_plan' "
             "AND outcome_storyboard_run_id IS NULL AND outcome_storyboard_version_id IS NULL "
             "AND outcome_shot_plan_run_id IS NOT NULL "
-            "AND outcome_shot_plan_version_id IS NOT NULL)))",
+            "AND outcome_shot_plan_version_id IS NOT NULL))) OR "
+            "(status='failed' AND completed_at IS NOT NULL AND failure_code IS NOT NULL "
+            "AND outcome_storyboard_run_id IS NULL AND outcome_storyboard_version_id IS NULL "
+            "AND outcome_shot_plan_run_id IS NULL AND outcome_shot_plan_version_id IS NULL)",
             name="ck_visual_operation_outcome",
         ),
     )
@@ -2438,6 +2472,7 @@ class VisualPlanningOperationRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    failure_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class PlanningReviewRecord(Base):
@@ -3153,6 +3188,10 @@ class DeliveryOperationRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class AuditEventRecord(Base):
@@ -3176,7 +3215,8 @@ class AuditEventRecord(Base):
             "'document_extraction.completed', 'brief_extraction.completed', "
             "'brief_candidate.accepted', 'brief_candidate.rejected', "
             "'creative_concept.generated', 'creative_concept.selected', 'script.generated', "
-            "'storyboard.generated', 'shot_plan.generated', "
+            "'creative_concept.failed', 'script.failed', 'storyboard.generated', "
+            "'storyboard.failed', 'shot_plan.generated', 'shot_plan.failed', "
             "'planning_review.submitted', 'planning_revision.requested', "
             "'planning_revision.completed', 'delivery_package.created', "
             "'delivery_package.exported')",

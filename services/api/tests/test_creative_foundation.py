@@ -24,12 +24,36 @@ from services.api.tests.test_brief_extraction_foundation import FIXTURES, _sourc
 CREATIVE = Path(__file__).resolve().parents[3] / "packages" / "test-fixtures" / "creative"
 
 
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (ProviderOutcomeStatus.REFUSAL, "provider_refusal"),
+        (ProviderOutcomeStatus.TIMEOUT, "provider_timeout"),
+        (ProviderOutcomeStatus.ERROR, "provider_error"),
+    ],
+)
+def test_creative_provider_failures_use_stable_error_codes(
+    status: ProviderOutcomeStatus, expected_code: str
+) -> None:
+    with pytest.raises(InvalidRequest) as raised:
+        CreativeApplicationService._provider_json(status, None)
+
+    assert raised.value.code == expected_code
+
+
 def _service(session_factory: SessionFactory) -> CreativeApplicationService:
     concepts = [json.loads((CREATIVE / "valid-concept-v1.json").read_text()) for _ in range(3)]
     concepts[1]["title"] = "Second concept"
     concepts[2]["title"] = "Third concept"
     provider = DeterministicFakeProvider(
-        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, json.dumps(concepts))
+        ProviderOutcome(
+            ProviderOutcomeStatus.SUCCESS,
+            json.dumps(concepts),
+            input_tokens=101,
+            output_tokens=202,
+            total_tokens=303,
+            provider_request_id="concept-request-1",
+        )
     )
     return CreativeApplicationService(lambda: SqlAlchemyUnitOfWork(session_factory), provider)
 
@@ -92,10 +116,27 @@ def test_concept_selection_and_script_lineage(
         assert connection.scalar(text("SELECT count(*) FROM creative_concept_candidates")) == 3
         assert connection.scalar(text("SELECT count(*) FROM creative_concept_selections")) == 1
         assert connection.scalar(text("SELECT count(*) FROM script_versions")) == 1
+        concept_usage = connection.execute(
+            text(
+                "SELECT input_tokens, output_tokens, total_tokens, provider_request_id "
+                "FROM creative_concept_runs"
+            )
+        ).one()
+        script_usage = connection.execute(
+            text(
+                "SELECT input_tokens, output_tokens, total_tokens, provider_request_id "
+                "FROM script_runs"
+            )
+        ).one()
+    assert concept_usage == (101, 202, 303, "concept-request-1")
+    assert script_usage == (None, None, None, None)
 
 
-def test_concept_wrong_count_rolls_back_operation(
-    persistence_session_factory: SessionFactory, clean_database: None, tmp_path: Path
+def test_concept_wrong_count_finalizes_failed_operation(
+    persistence_session_factory: SessionFactory,
+    clean_database: None,
+    database_engine: Engine,
+    tmp_path: Path,
 ) -> None:
     del clean_database
     context, project_id, *_ = _source(persistence_session_factory, tmp_path)
@@ -115,7 +156,7 @@ def test_concept_wrong_count_rolls_back_operation(
     service = CreativeApplicationService(
         lambda: SqlAlchemyUnitOfWork(persistence_session_factory), provider
     )
-    with pytest.raises(InvalidRequest):
+    with pytest.raises(InvalidRequest) as raised:
         service.generate_concepts(
             context,
             project_id,
@@ -123,10 +164,23 @@ def test_concept_wrong_count_rolls_back_operation(
             brief.current_version.id,
             idempotency_key="bad-count",
         )
-    succeeded = _service(persistence_session_factory).generate_concepts(
-        context, project_id, brief.brief.id, brief.current_version.id, idempotency_key="bad-count"
-    )
-    assert succeeded.replayed is False
+    assert raised.value.code == "schema_invalid"
+    with pytest.raises(ResourceConflict) as replay:
+        _service(persistence_session_factory).generate_concepts(
+            context,
+            project_id,
+            brief.brief.id,
+            brief.current_version.id,
+            idempotency_key="bad-count",
+        )
+    assert replay.value.code == "schema_invalid"
+    with database_engine.connect() as connection:
+        operation = connection.execute(
+            text("SELECT status, failure_code FROM creative_generation_operations")
+        ).one()
+        assert operation == ("failed", "schema_invalid")
+        assert connection.scalar(text("SELECT count(*) FROM creative_concept_runs")) == 0
+        assert connection.scalar(text("SELECT count(*) FROM creative_concept_candidates")) == 0
 
 
 def test_concurrent_same_key_concept_generation_creates_one_run(
@@ -148,16 +202,27 @@ def test_concurrent_same_key_concept_generation_creates_one_run(
     )
     service = _service(persistence_session_factory)
 
-    def generate() -> ConceptGenerationResult:
-        return service.generate_concepts(
-            context,
-            project_id,
-            brief.brief.id,
-            brief.current_version.id,
-            idempotency_key="concurrent-concepts",
-        )
+    def generate() -> ConceptGenerationResult | ResourceConflict:
+        try:
+            return service.generate_concepts(
+                context,
+                project_id,
+                brief.brief.id,
+                brief.current_version.id,
+                idempotency_key="concurrent-concepts",
+            )
+        except ResourceConflict as error:
+            return error
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: generate(), range(2)))
-    assert len({result.run.id for result in results}) == 1
-    assert sum(result.replayed for result in results) == 1
+    successful = [result for result in results if isinstance(result, ConceptGenerationResult)]
+    conflicts = [result for result in results if isinstance(result, ResourceConflict)]
+    assert 1 <= len(successful) <= 2
+    assert all(result.run.id == successful[0].run.id for result in successful)
+    assert len(conflicts) <= 1
+    if conflicts:
+        assert len(successful) == 1
+        assert conflicts[0].code == "resource_conflict"
+    else:
+        assert sum(not result.replayed for result in successful) == 1

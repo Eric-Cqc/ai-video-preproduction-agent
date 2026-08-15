@@ -223,6 +223,65 @@ class SqlAlchemyVisualPlanningOperationRepository:
             raise VersionConflict("visual planning operation changed before finalization")
         return _to_visual_planning_operation(r)
 
+    def finalize_failed(
+        self, value: VisualPlanningOperation, *, expected_version: int
+    ) -> VisualPlanningOperation:
+        r = self.session.scalar(
+            update(VisualPlanningOperationRecord)
+            .where(
+                VisualPlanningOperationRecord.id == value.id,
+                VisualPlanningOperationRecord.organization_id == value.organization_id,
+                VisualPlanningOperationRecord.workspace_id == value.workspace_id,
+                VisualPlanningOperationRecord.project_id == value.project_id,
+                VisualPlanningOperationRecord.operation == value.operation.value,
+                VisualPlanningOperationRecord.idempotency_key == value.idempotency_key,
+                VisualPlanningOperationRecord.request_digest == value.request_digest,
+                VisualPlanningOperationRecord.status == "reserved",
+                VisualPlanningOperationRecord.version == expected_version,
+            )
+            .values(
+                status="failed",
+                outcome_storyboard_run_id=None,
+                outcome_storyboard_version_id=None,
+                outcome_shot_plan_run_id=None,
+                outcome_shot_plan_version_id=None,
+                completed_at=value.completed_at,
+                failure_code=value.failure_code,
+                version=value.version,
+            )
+            .returning(VisualPlanningOperationRecord)
+        )
+        if r is None:
+            raise VersionConflict("visual planning operation changed before failure finalization")
+        return _to_visual_planning_operation(r)
+
+    def takeover(
+        self, value: VisualPlanningOperation, *, expected_version: int
+    ) -> VisualPlanningOperation | None:
+        r = self.session.scalar(
+            update(VisualPlanningOperationRecord)
+            .where(
+                VisualPlanningOperationRecord.id == value.id,
+                VisualPlanningOperationRecord.organization_id == value.organization_id,
+                VisualPlanningOperationRecord.workspace_id == value.workspace_id,
+                VisualPlanningOperationRecord.project_id == value.project_id,
+                VisualPlanningOperationRecord.operation == value.operation.value,
+                VisualPlanningOperationRecord.idempotency_key == value.idempotency_key,
+                VisualPlanningOperationRecord.request_digest == value.request_digest,
+                VisualPlanningOperationRecord.status == "reserved",
+                VisualPlanningOperationRecord.version == expected_version,
+            )
+            .values(
+                submitted_by_actor_subject=value.submitted_by_actor_subject,
+                submitted_at=value.submitted_at,
+                completed_at=None,
+                failure_code=None,
+                version=value.version,
+            )
+            .returning(VisualPlanningOperationRecord)
+        )
+        return _to_visual_planning_operation(r) if r is not None else None
+
 
 def _storyboard_run_values(v: StoryboardRun) -> dict[str, object]:
     return {
@@ -242,6 +301,10 @@ def _storyboard_run_values(v: StoryboardRun) -> dict[str, object]:
         "instruction_template_version": v.instruction_template_version,
         "provider_id": v.provider_id,
         "model_id": v.model_id,
+        "input_tokens": v.input_tokens,
+        "output_tokens": v.output_tokens,
+        "total_tokens": v.total_tokens,
+        "provider_request_id": v.provider_request_id,
         "status": v.status.value,
         "failure_category": v.failure_category,
         "created_by_actor_subject": v.created_by_actor_subject,
@@ -295,6 +358,10 @@ def _shot_run_values(v: ShotPlanRun) -> dict[str, object]:
         "instruction_template_version": v.instruction_template_version,
         "provider_id": v.provider_id,
         "model_id": v.model_id,
+        "input_tokens": v.input_tokens,
+        "output_tokens": v.output_tokens,
+        "total_tokens": v.total_tokens,
+        "provider_request_id": v.provider_request_id,
         "status": v.status.value,
         "failure_category": v.failure_category,
         "created_by_actor_subject": v.created_by_actor_subject,
@@ -350,6 +417,7 @@ def _operation_values(v: VisualPlanningOperation) -> dict[str, object]:
         "completed_at": v.completed_at,
         "correlation_id": v.correlation_id,
         "version": v.version,
+        "failure_code": v.failure_code,
     }
 
 
@@ -377,6 +445,10 @@ def _to_storyboard_run(r: StoryboardRunRecord) -> StoryboardRun:
         r.created_at,
         r.completed_at,
         r.version,
+        r.input_tokens,
+        r.output_tokens,
+        r.total_tokens,
+        r.provider_request_id,
     )
 
 
@@ -430,6 +502,10 @@ def _to_shot_plan_run(r: ShotPlanRunRecord) -> ShotPlanRun:
         r.created_at,
         r.completed_at,
         r.version,
+        r.input_tokens,
+        r.output_tokens,
+        r.total_tokens,
+        r.provider_request_id,
     )
 
 
@@ -479,4 +555,5 @@ def _to_visual_planning_operation(r: VisualPlanningOperationRecord) -> VisualPla
         r.completed_at,
         r.correlation_id,
         r.version,
+        r.failure_code,
     )

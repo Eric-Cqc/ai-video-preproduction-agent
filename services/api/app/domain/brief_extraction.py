@@ -86,6 +86,10 @@ class BriefExtractionRun:
     candidate_issues: list[dict[str, object]]
     created_by_actor_subject: str
     created_at: datetime
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

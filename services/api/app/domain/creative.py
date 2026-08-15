@@ -15,6 +15,7 @@ class CreativeGenerationOperationType(StrEnum):
 class CreativeGenerationOperationStatus(StrEnum):
     RESERVED = "reserved"
     ACCEPTED = "accepted"
+    FAILED = "failed"
 
 
 class VisualPlanningOperationType(StrEnum):
@@ -25,6 +26,7 @@ class VisualPlanningOperationType(StrEnum):
 class VisualPlanningOperationStatus(StrEnum):
     RESERVED = "reserved"
     ACCEPTED = "accepted"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,7 @@ class VisualPlanningOperation:
     completed_at: datetime | None
     correlation_id: str
     version: int
+    failure_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,7 @@ class CreativeGenerationOperation:
     completed_at: datetime | None
     correlation_id: str
     version: int
+    failure_code: str | None = None
 
 
 class CreativeRunStatus(StrEnum):
@@ -96,6 +100,10 @@ class CreativeConceptRun:
     created_at: datetime
     completed_at: datetime | None
     version: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +157,10 @@ class ScriptRun:
     created_at: datetime
     completed_at: datetime | None
     version: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +206,10 @@ class StoryboardRun:
     created_at: datetime
     completed_at: datetime | None
     version: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +261,10 @@ class ShotPlanRun:
     created_at: datetime
     completed_at: datetime | None
     version: int
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
