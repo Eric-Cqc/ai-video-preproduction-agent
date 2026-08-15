@@ -195,7 +195,7 @@ def test_deepseek_honors_retry_after_but_caps_delay() -> None:
     assert sleeps == [5.0]
 
 
-def test_deepseek_does_not_start_second_attempt_after_deadline() -> None:
+def test_deepseek_total_budget_allows_second_attempt_within_budget() -> None:
     now = 0.0
     calls = 0
     sleeps: list[float] = []
@@ -206,8 +206,10 @@ def test_deepseek_does_not_start_second_attempt_after_deadline() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal now, calls
         calls += 1
-        now = 1.0
-        return httpx.Response(503)
+        if calls == 1:
+            now = 1.0
+            return httpx.Response(503)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
 
     provider = DeepSeekProvider(
         api_key="test-key-not-a-secret",
@@ -224,9 +226,42 @@ def test_deepseek_does_not_start_second_attempt_after_deadline() -> None:
 
     outcome = provider.complete(_request())
 
-    assert outcome.status is ProviderOutcomeStatus.ERROR
+    assert outcome.status is ProviderOutcomeStatus.SUCCESS
+    assert calls == 2
+    assert sleeps == [0.5]
+    assert provider.total_timeout_seconds == 2
+
+
+def test_deepseek_does_not_start_attempt_after_total_budget() -> None:
+    now = 0.0
+    calls = 0
+
+    def clock() -> float:
+        return now
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal now, calls
+        calls += 1
+        now = 2.0
+        return httpx.Response(503)
+
+    provider = DeepSeekProvider(
+        api_key="test-key-not-a-secret",
+        base_url=DEEPSEEK_BASE_URL,
+        model_id=DEEPSEEK_MODEL_ID,
+        timeout_seconds=1,
+        max_attempts=2,
+        max_input_bytes=1024,
+        max_output_bytes=1024,
+        transport=httpx.MockTransport(handler),
+        clock=clock,
+        sleeper=lambda _: None,
+    )
+
+    outcome = provider.complete(_request())
+
+    assert outcome.status is ProviderOutcomeStatus.TIMEOUT
     assert calls == 1
-    assert sleeps == []
 
 
 def test_deepseek_malformed_or_oversized_output_fails_closed() -> None:

@@ -36,7 +36,6 @@ services:
     restart: unless-stopped
     volumes:
       - application_files:/var/lib/ai-video-preproduction
-      - caddy_data:/var/lib/caddy-data:ro
     networks: [internal]
 
   web:

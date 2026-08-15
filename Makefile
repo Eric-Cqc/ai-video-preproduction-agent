@@ -122,7 +122,7 @@ build:
 check: db-check format-check lint typecheck test contract-check build
 
 # RC ownership safety check: inspect `.owner` markers and use `make rc-down`; a live PID
-# without a matching start-time/command marker must be warned about and left untouched.
+# without a matching start-time/port-ancestry marker must be warned about and left untouched.
 rc-up: db-up db-upgrade db-upgrade-test db-current db-current-test
 	@set -euo pipefail; \
 	rc_dir="$(CURDIR)/.local/rc"; \
@@ -136,23 +136,71 @@ rc-up: db-up db-upgrade db-upgrade-test db-current db-current-test
 	  case "$$pid" in ''|*[!0-9]*) return 1;; esac; \
 	  kill -0 "$$pid" 2>/dev/null; \
 	}; \
+	port_descendant_owns_port() { \
+	  tracked_pid="$$1"; port="$$2"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -n "$$listening_pids" ] || return 1; \
+	  for listening_pid in $$listening_pids; do \
+	    case "$$listening_pid" in ''|*[!0-9]*) continue;; esac; \
+	    parent_pid="$$listening_pid"; \
+	    for hop in $$(seq 1 10); do \
+	      if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	      next_parent="$$(ps -o ppid= -p "$$parent_pid" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
+	      case "$$next_parent" in ''|*[!0-9]*) break;; esac; \
+	      if [ "$$next_parent" = "$$parent_pid" ]; then break; fi; \
+	      parent_pid="$$next_parent"; \
+	    done; \
+	    if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	  done; \
+	  return 1; \
+	}; \
+	port_is_listen_free() { \
+	  port="$$1"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -z "$$listening_pids" ]; \
+	}; \
+	wait_for_port_release() { \
+	  port="$$1"; \
+	  for attempt in $$(seq 1 20); do \
+	    port_status=0; \
+	    port_is_listen_free "$$port" || port_status="$$?"; \
+	    if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	    if [ "$$port_status" -eq 2 ]; then \
+	      echo "RC ownership error: cannot verify release of port $$port; lsof is unavailable" >&2; \
+	      return 2; \
+	    fi; \
+	    sleep 0.1; \
+	  done; \
+	  echo "RC ownership error: port $$port remains LISTEN-bound after owned process termination" >&2; \
+	  return 1; \
+	}; \
 	process_owned() { \
 	  pid="$$1"; marker_file="$$2"; \
 	  if ! pid_is_live "$$pid" || ! test -s "$$marker_file"; then return 1; fi; \
 	  IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file"; \
-	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] && [ -n "$$marker_pattern" ] || return 1; \
+	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] || return 1; \
 	  current_start="$$(ps -p "$$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
-	  current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
 	  [ "$$current_start" = "$$marker_start" ] || return 1; \
 	  case "$$marker_service" in api|web) ;; *) return 1;; esac; \
-	  case "$$current_command" in *"$$marker_pattern"*) ;; *) return 1;; esac; \
+	  port_status=0; \
+	  port_descendant_owns_port "$$pid" "$$marker_port" || port_status="$$?"; \
+	  if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	  if [ "$$port_status" -eq 2 ]; then \
+	    echo "RC ownership warning: lsof unavailable; falling back to command marker for PID $$pid" >&2; \
+	    if [ -n "$$marker_pattern" ]; then \
+	      current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
+	      case "$$current_command" in *"$$marker_pattern"*) return 0;; esac; \
+	    fi; \
+	  fi; \
+	  return 1; \
 	}; \
 	write_owner_marker() { \
 	  pid="$$1"; service="$$2"; port="$$3"; pattern="$$4"; marker_file="$$5"; \
 	  for attempt in $$(seq 1 20); do \
 	    marker_start="$$(ps -p "$$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
-	    marker_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
-	    if [ -n "$$marker_start" ] && case "$$marker_command" in *"$$pattern"*) true;; *) false;; esac; then \
+	    if [ -n "$$marker_start" ]; then \
 	      printf '%s|%s|%s|%s|%s\n' "$$pid" "$$marker_start" "$$service" "$$port" "$$pattern" >"$$marker_file"; \
 	      return 0; \
 	    fi; \
@@ -162,19 +210,39 @@ rc-up: db-up db-upgrade db-upgrade-test db-current db-current-test
 	}; \
 	stop_pid() { \
 	  pid="$$1"; marker_file="$$2"; \
-	  if ! pid_is_live "$$pid"; then return 0; fi; \
+	  marker_port=""; \
+	  if test -s "$$marker_file"; then \
+	    IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file" || true; \
+	  fi; \
+	  if ! pid_is_live "$$pid"; then \
+	    if [ -n "$$marker_port" ]; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
+	    return 0; \
+	  fi; \
 	  if ! process_owned "$$pid" "$$marker_file"; then echo "Refusing to stop live unowned RC PID $$pid" >&2; return 2; fi; \
+	  if [ -z "$$marker_port" ]; then echo "RC ownership error: owned PID $$pid has no marker port" >&2; return 1; fi; \
 	  kill "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 50); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
 	  kill -KILL "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 20); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
-	  echo "Owned RC PID $$pid did not exit after SIGKILL" >&2; return 1; \
+	  echo "Owned RC PID $$pid did not exit after SIGKILL; port $$marker_port may remain LISTEN-bound" >&2; return 1; \
 	}; \
 	cleanup() { \
 	  status="$$?"; \
@@ -275,7 +343,7 @@ hosted-smoke: hosted-env-file
 		-e PILOT_BASE_URL=http://caddy:80 \
 		-e HOSTED_SMOKE_CA_BUNDLE="$${HOSTED_SMOKE_CA_BUNDLE:-}" \
 		-e HOSTED_SMOKE_INSECURE="$${HOSTED_SMOKE_INSECURE:-}" \
-		api sh -c 'if { test "$${PILOT_DOMAIN}" = localhost || test "$${PILOT_DOMAIN}" = 127.0.0.1; } && test -z "$${HOSTED_SMOKE_CA_BUNDLE}" && test -f /var/lib/caddy-data/caddy/pki/authorities/local/root.crt; then export HOSTED_SMOKE_CA_BUNDLE=/var/lib/caddy-data/caddy/pki/authorities/local/root.crt; fi; exec python -m infra.scripts.hosted_proxy_smoke --assert-bootstrap'
+		api sh -c 'if { test "$${PILOT_DOMAIN}" = localhost || test "$${PILOT_DOMAIN}" = 127.0.0.1; } && test -z "$${HOSTED_SMOKE_CA_BUNDLE}" && test -z "$${HOSTED_SMOKE_INSECURE}"; then export HOSTED_SMOKE_INSECURE=1; fi; exec python -m infra.scripts.hosted_proxy_smoke --assert-bootstrap'
 
 hosted-logs: hosted-env-file
 	$(HOSTED_COMPOSE) logs --follow --tail=100
@@ -320,23 +388,71 @@ rc-check: db-up db-upgrade-test db-current-test
 	  case "$$pid" in ''|*[!0-9]*) return 1;; esac; \
 	  kill -0 "$$pid" 2>/dev/null; \
 	}; \
+	port_descendant_owns_port() { \
+	  tracked_pid="$$1"; port="$$2"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -n "$$listening_pids" ] || return 1; \
+	  for listening_pid in $$listening_pids; do \
+	    case "$$listening_pid" in ''|*[!0-9]*) continue;; esac; \
+	    parent_pid="$$listening_pid"; \
+	    for hop in $$(seq 1 10); do \
+	      if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	      next_parent="$$(ps -o ppid= -p "$$parent_pid" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
+	      case "$$next_parent" in ''|*[!0-9]*) break;; esac; \
+	      if [ "$$next_parent" = "$$parent_pid" ]; then break; fi; \
+	      parent_pid="$$next_parent"; \
+	    done; \
+	    if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	  done; \
+	  return 1; \
+	}; \
+	port_is_listen_free() { \
+	  port="$$1"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -z "$$listening_pids" ]; \
+	}; \
+	wait_for_port_release() { \
+	  port="$$1"; \
+	  for attempt in $$(seq 1 20); do \
+	    port_status=0; \
+	    port_is_listen_free "$$port" || port_status="$$?"; \
+	    if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	    if [ "$$port_status" -eq 2 ]; then \
+	      echo "RC ownership error: cannot verify release of port $$port; lsof is unavailable" >&2; \
+	      return 2; \
+	    fi; \
+	    sleep 0.1; \
+	  done; \
+	  echo "RC ownership error: port $$port remains LISTEN-bound after owned process termination" >&2; \
+	  return 1; \
+	}; \
 	process_owned() { \
 	  pid="$$1"; marker_file="$$2"; \
 	  if ! pid_is_live "$$pid" || ! test -s "$$marker_file"; then return 1; fi; \
 	  IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file"; \
-	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] && [ -n "$$marker_pattern" ] || return 1; \
+	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] || return 1; \
 	  current_start="$$(ps -p "$$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
-	  current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
 	  [ "$$current_start" = "$$marker_start" ] || return 1; \
 	  case "$$marker_service" in api|web) ;; *) return 1;; esac; \
-	  case "$$current_command" in *"$$marker_pattern"*) ;; *) return 1;; esac; \
+	  port_status=0; \
+	  port_descendant_owns_port "$$pid" "$$marker_port" || port_status="$$?"; \
+	  if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	  if [ "$$port_status" -eq 2 ]; then \
+	    echo "RC ownership warning: lsof unavailable; falling back to command marker for PID $$pid" >&2; \
+	    if [ -n "$$marker_pattern" ]; then \
+	      current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
+	      case "$$current_command" in *"$$marker_pattern"*) return 0;; esac; \
+	    fi; \
+	  fi; \
+	  return 1; \
 	}; \
 	write_owner_marker() { \
 	  pid="$$1"; service="$$2"; port="$$3"; pattern="$$4"; marker_file="$$5"; \
 	  for attempt in $$(seq 1 20); do \
 	    marker_start="$$(ps -p "$$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
-	    marker_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
-	    if [ -n "$$marker_start" ] && case "$$marker_command" in *"$$pattern"*) true;; *) false;; esac; then \
+	    if [ -n "$$marker_start" ]; then \
 	      printf '%s|%s|%s|%s|%s\n' "$$pid" "$$marker_start" "$$service" "$$port" "$$pattern" >"$$marker_file"; \
 	      return 0; \
 	    fi; \
@@ -346,19 +462,39 @@ rc-check: db-up db-upgrade-test db-current-test
 	}; \
 	stop_pid() { \
 	  pid="$$1"; marker_file="$$2"; \
-	  if ! pid_is_live "$$pid"; then return 0; fi; \
+	  marker_port=""; \
+	  if test -s "$$marker_file"; then \
+	    IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file" || true; \
+	  fi; \
+	  if ! pid_is_live "$$pid"; then \
+	    if [ -n "$$marker_port" ]; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
+	    return 0; \
+	  fi; \
 	  if ! process_owned "$$pid" "$$marker_file"; then echo "Refusing to stop live unowned RC PID $$pid" >&2; return 2; fi; \
+	  if [ -z "$$marker_port" ]; then echo "RC ownership error: owned PID $$pid has no marker port" >&2; return 1; fi; \
 	  kill "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 50); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
 	  kill -KILL "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 20); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
-	  echo "Owned RC PID $$pid did not exit after SIGKILL" >&2; return 1; \
+	  echo "Owned RC PID $$pid did not exit after SIGKILL; port $$marker_port may remain LISTEN-bound" >&2; return 1; \
 	}; \
 	prepare_existing() { \
 	  pid_file="$$1"; marker_file="$$2"; \
@@ -426,32 +562,101 @@ rc-down:
 	  case "$$pid" in ''|*[!0-9]*) return 1;; esac; \
 	  kill -0 "$$pid" 2>/dev/null; \
 	}; \
+	port_descendant_owns_port() { \
+	  tracked_pid="$$1"; port="$$2"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -n "$$listening_pids" ] || return 1; \
+	  for listening_pid in $$listening_pids; do \
+	    case "$$listening_pid" in ''|*[!0-9]*) continue;; esac; \
+	    parent_pid="$$listening_pid"; \
+	    for hop in $$(seq 1 10); do \
+	      if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	      next_parent="$$(ps -o ppid= -p "$$parent_pid" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
+	      case "$$next_parent" in ''|*[!0-9]*) break;; esac; \
+	      if [ "$$next_parent" = "$$parent_pid" ]; then break; fi; \
+	      parent_pid="$$next_parent"; \
+	    done; \
+	    if [ "$$parent_pid" = "$$tracked_pid" ]; then return 0; fi; \
+	  done; \
+	  return 1; \
+	}; \
+	port_is_listen_free() { \
+	  port="$$1"; \
+	  if ! command -v lsof >/dev/null 2>&1; then return 2; fi; \
+	  listening_pids="$$(lsof -ti "tcp:$$port" -sTCP:LISTEN 2>/dev/null || true)"; \
+	  [ -z "$$listening_pids" ]; \
+	}; \
+	wait_for_port_release() { \
+	  port="$$1"; \
+	  for attempt in $$(seq 1 20); do \
+	    port_status=0; \
+	    port_is_listen_free "$$port" || port_status="$$?"; \
+	    if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	    if [ "$$port_status" -eq 2 ]; then \
+	      echo "RC ownership error: cannot verify release of port $$port; lsof is unavailable" >&2; \
+	      return 2; \
+	    fi; \
+	    sleep 0.1; \
+	  done; \
+	  echo "RC ownership error: port $$port remains LISTEN-bound after owned process termination" >&2; \
+	  return 1; \
+	}; \
 	process_owned() { \
 	  pid="$$1"; marker_file="$$2"; \
 	  if ! pid_is_live "$$pid" || ! test -s "$$marker_file"; then return 1; fi; \
 	  IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file"; \
-	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] && [ -n "$$marker_pattern" ] || return 1; \
+	  [ "$$marker_pid" = "$$pid" ] && [ -n "$$marker_start" ] && [ -n "$$marker_port" ] || return 1; \
 	  current_start="$$(ps -p "$$pid" -o lstart= 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$$//' || true)"; \
-	  current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
 	  [ "$$current_start" = "$$marker_start" ] || return 1; \
 	  case "$$marker_service" in api|web) ;; *) return 1;; esac; \
-	  case "$$current_command" in *"$$marker_pattern"*) ;; *) return 1;; esac; \
+	  port_status=0; \
+	  port_descendant_owns_port "$$pid" "$$marker_port" || port_status="$$?"; \
+	  if [ "$$port_status" -eq 0 ]; then return 0; fi; \
+	  if [ "$$port_status" -eq 2 ]; then \
+	    echo "RC ownership warning: lsof unavailable; falling back to command marker for PID $$pid" >&2; \
+	    if [ -n "$$marker_pattern" ]; then \
+	      current_command="$$(ps -p "$$pid" -o command= 2>/dev/null || true)"; \
+	      case "$$current_command" in *"$$marker_pattern"*) return 0;; esac; \
+	    fi; \
+	  fi; \
+	  return 1; \
 	}; \
 	stop_pid() { \
 	  pid="$$1"; marker_file="$$2"; \
-	  if ! pid_is_live "$$pid"; then return 0; fi; \
+	  marker_port=""; \
+	  if test -s "$$marker_file"; then \
+	    IFS='|' read -r marker_pid marker_start marker_service marker_port marker_pattern < "$$marker_file" || true; \
+	  fi; \
+	  if ! pid_is_live "$$pid"; then \
+	    if [ -n "$$marker_port" ]; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
+	    return 0; \
+	  fi; \
 	  if ! process_owned "$$pid" "$$marker_file"; then echo "Refusing to stop live unowned RC PID $$pid" >&2; return 2; fi; \
+	  if [ -z "$$marker_port" ]; then echo "RC ownership error: owned PID $$pid has no marker port" >&2; return 1; fi; \
 	  kill "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 50); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
 	  kill -KILL "$$pid" 2>/dev/null || true; \
 	  for attempt in $$(seq 1 20); do \
-	    if ! pid_is_live "$$pid"; then return 0; fi; \
+	    if ! pid_is_live "$$pid"; then \
+	      port_status=0; \
+	      wait_for_port_release "$$marker_port" || port_status="$$?"; \
+	      return "$$port_status"; \
+	    fi; \
 	    sleep 0.1; \
 	  done; \
-	  echo "Owned RC PID $$pid did not exit after SIGKILL" >&2; return 1; \
+	  echo "Owned RC PID $$pid did not exit after SIGKILL; port $$marker_port may remain LISTEN-bound" >&2; return 1; \
 	}; \
 	stop_failed=0; \
 	for service in api web; do \

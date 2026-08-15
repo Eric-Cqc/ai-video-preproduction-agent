@@ -68,7 +68,7 @@ Only canonical Structured Brief v1 output becomes an immutable `human_review_req
 
 ## Offline Creative Concept and Script loop
 
-Stage 11 accepts a scoped draft BriefVersion as generation input and pins its canonical digest, provider/model identity, and server-owned instruction-template version. The deterministic fake provider must return exactly three canonical Creative Concept objects; malformed, unsafe, or schema-invalid output rolls back without a partial run, candidate, operation, or audit record. A human with mutation authority makes one immutable selection per concept run. Only that selected candidate can produce a canonical immutable ScriptVersion. Idempotency is scoped to Organization, Workspace, Project, operation, and key; a matching accepted request replays without a provider call or extra audit event.
+Stage 11 accepts a scoped draft BriefVersion as generation input and pins its canonical digest, provider/model identity, and server-owned instruction-template version. The deterministic fake provider must return exactly three canonical Creative Concept objects; malformed, unsafe, or schema-invalid output rolls back the run and candidates while persisting a failed operation and bounded audit event. A human with mutation authority makes one immutable selection per concept run. Only that selected candidate can produce a canonical immutable ScriptVersion. Idempotency is scoped to Organization, Workspace, Project, operation, and key; a matching accepted request replays without a provider call or extra audit event.
 
 Neither raw prompts nor raw provider output is persisted or included in audit payloads. Concept, selection, script, and operation reads are tenant/project scoped and inaccessible resources share the same opaque 404 response. Scripts remain draft candidates: Stage 11 adds no script approval, editing, storyboard, shot plan, or media generation.
 
@@ -285,9 +285,13 @@ The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AG
 Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop
 decisions are recorded by ADR-048 through ADR-052. [ADR-064](docs/adr/ADR-064-deepseek-hosted-pilot-provider.md)
 and [ADR-066](docs/adr/ADR-066-single-tenant-hosted-mvp-boundary.md) authorize the bounded,
-server-side DeepSeek hosted-pilot boundary. Hosted acceptance still requires the ADR-064 privacy,
-retention, cost, and availability review plus external live-chain validation; those are not claims
-of completion and do not require creating ADR-065.
+server-side DeepSeek hosted-pilot boundary. Stage 21 hardened that boundary (bounded retries,
+transaction-safe provider calls for generation flows, real proxy-origin hosted smoke, durable
+export cleanup, an operator storage sweep, and a live-verified hosted backup) and recorded the
+required ADR-064 review as [ADR-067](docs/adr/ADR-067-hosted-pilot-review-outcome.md) —
+**conditional**: hosted acceptance for a live key still requires external Provider retention
+terms, budget/rate controls, and approved data classification; those are outside this repository
+and are not claims of completion. ADR-065 does not exist and is not required.
 
 The following describes the historical Stage 12 boundary, not the current product state. Stage 12 Storyboard/Shot Plan decisions are recorded by ADR-053 through ADR-057.
 The workflow stores immutable structured planning artifacts pinned to complete

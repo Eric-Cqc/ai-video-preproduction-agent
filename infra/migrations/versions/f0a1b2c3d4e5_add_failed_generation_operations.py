@@ -84,7 +84,8 @@ _OLD_AUDIT = (
     "'brief_candidate.accepted', 'brief_candidate.rejected', 'creative_concept.generated', "
     "'creative_concept.selected', 'script.generated', 'storyboard.generated', "
     "'shot_plan.generated', 'planning_review.submitted', 'planning_revision.requested', "
-    "'planning_revision.completed', 'delivery_package.created', 'delivery_package.exported')"
+    "'planning_revision.completed', 'planning_revision.cancelled', 'delivery_package.created', "
+    "'delivery_package.exported')"
 )
 _NEW_AUDIT = _OLD_AUDIT.replace(
     "'creative_concept.selected', 'script.generated', 'storyboard.generated', "

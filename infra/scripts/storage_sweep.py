@@ -17,6 +17,10 @@ from uuid import UUID
 from sqlalchemy import Engine, create_engine, text
 
 LOCAL_STORAGE_ADAPTER = "local_filesystem_v1"
+# Keep this above the worst-case storage-finalize-to-commit window so a sweep
+# cannot remove an object between its storage write and the corresponding DB commit.
+MIN_GRACE_PERIOD_HOURS = 1.0
+MIN_GRACE_PERIOD = timedelta(hours=MIN_GRACE_PERIOD_HOURS)
 _KEY_PATTERN = re.compile(r"^(?:object|stage)-[A-Za-z0-9]{32}$")
 _CLEANUP_TABLES = {
     "source_object_cleanup_requirements": "source_object_cleanup_requirements",
@@ -154,8 +158,10 @@ def sweep_storage(
     delete_file: Callable[[Path], None] = _unlink_idempotently,
     storage_adapter: str = LOCAL_STORAGE_ADAPTER,
 ) -> SweepResult:
-    if grace_period.total_seconds() < 0:
-        raise ValueError("grace period cannot be negative")
+    if grace_period < MIN_GRACE_PERIOD:
+        raise ValueError(
+            "grace period must be at least 1 hour to cover the storage-finalize-to-commit window"
+        )
     root = root.resolve()
     pending_rows = store.pending_cleanup()
     protected_keys = store.referenced_storage_keys()
@@ -178,6 +184,9 @@ def sweep_storage(
             continue
         if not apply:
             pending_planned += 1
+            continue
+        if requirement.storage_key in store.referenced_storage_keys():
+            pending_protected += 1
             continue
         try:
             delete_file(path)
@@ -209,6 +218,9 @@ def sweep_storage(
         candidate_files += 1
         if not apply:
             continue
+        if path.name in store.referenced_storage_keys():
+            protected_files += 1
+            continue
         try:
             delete_file(path)
         except Exception:
@@ -238,7 +250,10 @@ def _parser() -> argparse.ArgumentParser:
         dest="grace_hours",
         type=float,
         default=24.0,
-        help="age threshold for files, in hours (default: 24)",
+        help=(
+            "age threshold in hours; minimum 1 hour protects "
+            "finalize-to-commit windows (default: 24)"
+        ),
     )
     parser.add_argument(
         "--storage-root",
@@ -267,8 +282,12 @@ def _print_result(result: SweepResult, *, apply: bool, grace_hours: float) -> No
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.grace_hours < 0:
-        print("storage-sweep error=negative_grace_period", file=sys.stderr)
+    if args.grace_hours < MIN_GRACE_PERIOD_HOURS:
+        print(
+            "storage-sweep error=grace_period_too_short minimum_hours=1 "
+            "(must cover the storage-finalize-to-commit window)",
+            file=sys.stderr,
+        )
         return 2
     if args.storage_adapter != LOCAL_STORAGE_ADAPTER:
         print("storage-sweep error=local_adapter_required", file=sys.stderr)

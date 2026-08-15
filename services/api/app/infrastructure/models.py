@@ -3218,8 +3218,8 @@ class AuditEventRecord(Base):
             "'creative_concept.failed', 'script.failed', 'storyboard.generated', "
             "'storyboard.failed', 'shot_plan.generated', 'shot_plan.failed', "
             "'planning_review.submitted', 'planning_revision.requested', "
-            "'planning_revision.completed', 'delivery_package.created', "
-            "'delivery_package.exported')",
+            "'planning_revision.completed', 'planning_revision.cancelled', "
+            "'delivery_package.created', 'delivery_package.exported')",
             name="ck_audit_action",
         ),
         Index(

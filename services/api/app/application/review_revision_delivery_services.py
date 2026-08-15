@@ -8,6 +8,7 @@ import zipfile
 from collections.abc import AsyncIterator, Callable, Iterable
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from typing import cast
 from uuid import UUID, uuid4
 
 from foundation_contracts import validate_script, validate_shot_plan, validate_storyboard
@@ -62,6 +63,8 @@ UnitOfWorkFactory = Callable[[], UnitOfWork]
 logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "delivery-package-v1"
 MAX_EXPORT_BYTES = 10 * 1024 * 1024
+MAX_REQUESTED_CHANGES_BYTES = 16 * 1024
+MAX_REQUESTED_CHANGES_DEPTH = 8
 EXPORT_FORMATS = frozenset(
     {
         "manifest.json",
@@ -457,6 +460,7 @@ class ReviewRevisionDeliveryApplicationService:
                 if existing is None:
                     raise ResourceConflict("revision reservation could not be resolved")
                 return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
+            self._validate_revision_requested_changes(request)
             successors, usage = self._create_successors(
                 uow, context, project_id, request, provider_mode
             )
@@ -1659,8 +1663,7 @@ class ReviewRevisionDeliveryApplicationService:
     ) -> None:
         if not 1 <= len(summary) <= 1000:
             raise InvalidRequest("review summary must be between 1 and 1000 characters")
-        if not isinstance(requested_changes, dict):
-            raise InvalidRequest("requested_changes must be an object")
+        self._validate_requested_changes_bounds(requested_changes)
         if outcome is not PlanningReviewOutcome.REVISION_REQUESTED and requested_changes:
             raise InvalidRequest("requested_changes require a revision request")
         identifiers = (script_version_id, storyboard_version_id, shot_plan_version_id)
@@ -1673,6 +1676,14 @@ class ReviewRevisionDeliveryApplicationService:
             raise InvalidRequest("storyboard review requires a storyboard version")
         if artifact_type is ReviewArtifactType.SHOT_PLAN and shot_plan_version_id is None:
             raise InvalidRequest("shot plan review requires a shot plan version")
+
+    @staticmethod
+    def _validate_requested_changes_bounds(value: object) -> dict[str, object]:
+        return validate_requested_changes_bounds(value)
+
+    @staticmethod
+    def _validate_revision_requested_changes(request: PlanningRevisionRequest) -> None:
+        validate_requested_changes_bounds(request.requested_changes)
 
 
 def _scope(context: TenantContext, project_id: UUID) -> dict[str, str]:
@@ -1691,6 +1702,48 @@ def _digest(value: object) -> str:
 
 def _content_digest(value: dict[str, object]) -> str:
     return _digest(value)
+
+
+def validate_requested_changes_bounds(value: object) -> dict[str, object]:
+    """Enforce the requested-change budget at the application boundary."""
+
+    if not isinstance(value, dict):
+        raise InvalidRequest(
+            "requested_changes must be an object", code="requested_changes_invalid"
+        )
+    if _max_container_depth(value) > MAX_REQUESTED_CHANGES_DEPTH:
+        raise InvalidRequest(
+            "requested_changes exceeds the maximum nesting depth",
+            code="requested_changes_too_deep",
+        )
+    try:
+        serialized = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
+    except (TypeError, ValueError, RecursionError) as error:
+        raise InvalidRequest(
+            "requested_changes must contain JSON values", code="requested_changes_invalid"
+        ) from error
+    if len(serialized) > MAX_REQUESTED_CHANGES_BYTES:
+        raise InvalidRequest(
+            "requested_changes exceeds the maximum serialized size",
+            code="requested_changes_too_large",
+        )
+    return cast(dict[str, object], value)
+
+
+def _max_container_depth(value: object) -> int:
+    maximum = 0
+    pending: list[tuple[object, int]] = [(value, 0)]
+    while pending:
+        current, depth = pending.pop()
+        if not isinstance(current, (dict, list, tuple)):
+            continue
+        current_depth = depth + 1
+        maximum = max(maximum, current_depth)
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend((child, current_depth) for child in children)
+    return maximum
 
 
 def _provider_usage(

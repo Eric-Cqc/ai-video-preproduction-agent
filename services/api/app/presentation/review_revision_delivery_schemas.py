@@ -1,8 +1,18 @@
-import json
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from services.api.app.application.errors import InvalidRequest
+from services.api.app.application.review_revision_delivery_services import (
+    MAX_REQUESTED_CHANGES_BYTES as _MAX_REQUESTED_CHANGES_BYTES,
+)
+from services.api.app.application.review_revision_delivery_services import (
+    MAX_REQUESTED_CHANGES_DEPTH as _MAX_REQUESTED_CHANGES_DEPTH,
+)
+from services.api.app.application.review_revision_delivery_services import (
+    validate_requested_changes_bounds,
+)
 
 ReviewArtifactTypeLiteral = Literal["script", "storyboard", "shot_plan", "planning_bundle"]
 ReviewOutcomeLiteral = Literal["approved", "revision_requested", "rejected"]
@@ -29,8 +39,8 @@ ExportFormatLiteral = Literal[
     "delivery-package.zip",
 ]
 
-MAX_REQUESTED_CHANGES_BYTES = 16 * 1024
-MAX_REQUESTED_CHANGES_DEPTH = 8
+MAX_REQUESTED_CHANGES_BYTES = _MAX_REQUESTED_CHANGES_BYTES
+MAX_REQUESTED_CHANGES_DEPTH = _MAX_REQUESTED_CHANGES_DEPTH
 
 
 class PlanningReviewSubmitRequest(BaseModel):
@@ -48,16 +58,9 @@ class PlanningReviewSubmitRequest(BaseModel):
     @classmethod
     def validate_requested_changes_bounds(cls, value: dict[str, object]) -> dict[str, object]:
         try:
-            serialized = json.dumps(
-                value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-            ).encode()
-        except (TypeError, ValueError) as error:
-            raise ValueError("requested_changes must contain JSON values") from error
-        if len(serialized) > MAX_REQUESTED_CHANGES_BYTES:
-            raise ValueError("requested_changes exceeds the maximum serialized size")
-        if _max_container_depth(value) > MAX_REQUESTED_CHANGES_DEPTH:
-            raise ValueError("requested_changes exceeds the maximum nesting depth")
-        return value
+            return validate_requested_changes_bounds(value)
+        except InvalidRequest as error:
+            raise ValueError(str(error)) from error
 
     @model_validator(mode="after")
     def validate_artifact_pair(self) -> "PlanningReviewSubmitRequest":
@@ -72,20 +75,6 @@ class PlanningReviewSubmitRequest(BaseModel):
         if self.outcome != "revision_requested" and self.requested_changes:
             raise ValueError("requested_changes requires revision_requested")
         return self
-
-
-def _max_container_depth(value: object) -> int:
-    maximum = 0
-    pending: list[tuple[object, int]] = [(value, 0)]
-    while pending:
-        current, depth = pending.pop()
-        if not isinstance(current, (dict, list, tuple)):
-            continue
-        current_depth = depth + 1
-        maximum = max(maximum, current_depth)
-        children = current.values() if isinstance(current, dict) else current
-        pending.extend((child, current_depth) for child in children)
-    return maximum
 
 
 class RevisionCompleteRequest(BaseModel):

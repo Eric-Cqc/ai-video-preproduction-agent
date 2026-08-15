@@ -33,7 +33,7 @@ CREATIVE = Path(__file__).resolve().parents[3] / "packages" / "test-fixtures" / 
 def creative_client(test_database_url: str, clean_database: None) -> Iterator[TestClient]:
     del clean_database
     app = create_app(ApiSettings(app_environment="test", database_url=test_database_url))
-    with TestClient(app) as client:
+    with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
 

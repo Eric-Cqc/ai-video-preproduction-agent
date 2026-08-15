@@ -1,6 +1,7 @@
 import hashlib
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -8,7 +9,13 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import Engine, text
 
-from services.api.app.application.errors import ApplicationError, ResourceConflict, ResourceNotFound
+from services.api.app.application.context import TenantContext
+from services.api.app.application.errors import (
+    ApplicationError,
+    InvalidRequest,
+    ResourceConflict,
+    ResourceNotFound,
+)
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
     RevisionResult,
@@ -19,7 +26,11 @@ from services.api.app.application.visual_planning_services import (
     StoryboardGenerationResult,
     VisualPlanningApplicationService,
 )
-from services.api.app.domain import PlanningReviewOutcome, ReviewArtifactType
+from services.api.app.domain import (
+    PlanningReviewOutcome,
+    ReviewArtifactType,
+    RevisionRequestStatus,
+)
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.presentation.review_revision_delivery_schemas import (
@@ -66,6 +77,95 @@ def test_requested_changes_rejects_excessive_nesting() -> None:
 
     with pytest.raises(ValidationError, match="maximum nesting depth"):
         _review_request({"nested": value})
+
+
+@pytest.mark.parametrize(
+    ("requested_changes", "error_code"),
+    [
+        ({"note": "x" * (16 * 1024)}, "requested_changes_too_large"),
+        (
+            {
+                "nested": {
+                    "next": {
+                        "next": {
+                            "next": {"next": {"next": {"next": {"next": {"next": "too deep"}}}}}
+                        }
+                    }
+                }
+            },
+            "requested_changes_too_deep",
+        ),
+    ],
+)
+def test_application_layer_rejects_bypassed_requested_changes_bounds(
+    requested_changes: dict[str, object], error_code: str
+) -> None:
+    with pytest.raises(InvalidRequest) as error:
+        ReviewRevisionDeliveryApplicationService._validate_requested_changes_bounds(
+            requested_changes
+        )
+
+    assert error.value.code == error_code
+
+
+def test_completion_revalidates_legacy_requested_changes_before_provider_payload() -> None:
+    class FakeDeliveryOperations:
+        def __init__(self) -> None:
+            self.reserved: object | None = None
+
+        def get_by_key(self, *_: object) -> None:
+            return None
+
+        def reserve(self, operation: object) -> object:
+            self.reserved = operation
+            return operation
+
+    class FakeUoW:
+        def __init__(self) -> None:
+            self.delivery_operations = FakeDeliveryOperations()
+
+        def __enter__(self) -> "FakeUoW":
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+    legacy_request = cast(
+        Any,
+        SimpleNamespace(
+            id=UUID("00000000-0000-0000-0000-000000000001"),
+            artifact_type=ReviewArtifactType.SCRIPT,
+            request_digest="a" * 64,
+            status=RevisionRequestStatus.OPEN,
+            review_id=UUID("00000000-0000-0000-0000-000000000002"),
+            requested_changes={"note": "x" * (16 * 1024)},
+            version=1,
+        ),
+    )
+    uow = FakeUoW()
+    service = ReviewRevisionDeliveryApplicationService(cast(Any, lambda: uow), cast(Any, object()))
+    service._require_mutation = lambda *_: None  # type: ignore[method-assign]
+    service._require_revision = lambda *_: legacy_request  # type: ignore[method-assign]
+    service._require_review = lambda *_: SimpleNamespace(  # type: ignore[assignment,method-assign]
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED
+    )
+    context = TenantContext(
+        "actor",
+        "correlation",
+        UUID("00000000-0000-0000-0000-000000000010"),
+        UUID("00000000-0000-0000-0000-000000000011"),
+    )
+
+    with pytest.raises(InvalidRequest) as error:
+        service.complete_revision(
+            context,
+            UUID("00000000-0000-0000-0000-000000000012"),
+            legacy_request.id,
+            idempotency_key="legacy-oversized",
+        )
+
+    assert error.value.code == "requested_changes_too_large"
+    assert uow.delivery_operations.reserved is not None
 
 
 def _services(

@@ -18,6 +18,7 @@ DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
 SAFE_USER_AGENT = "ai-video-preproduction-agent/0.1"
 MAX_RETRY_AFTER_SECONDS = 5.0
 RETRY_BACKOFF_SECONDS = (0.5, 1.0)
+PROVIDER_CALL_SAFETY_MARGIN_SECONDS = 5.0
 
 
 class ProviderOutcomeStatus(StrEnum):
@@ -98,6 +99,18 @@ class DeepSeekProvider:
             headers={"Authorization": f"Bearer {api_key}", "User-Agent": SAFE_USER_AGENT},
         )
 
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
+    @property
+    def max_attempts(self) -> int:
+        return self._max_attempts
+
+    @property
+    def total_timeout_seconds(self) -> float:
+        return self._timeout_seconds * self._max_attempts
+
     def complete(self, request: ModelRequest) -> ProviderOutcome:
         if request.allow_tools or len(request.input_text.encode()) > self._max_input_bytes:
             return ProviderOutcome(ProviderOutcomeStatus.ERROR)
@@ -115,16 +128,23 @@ class DeepSeekProvider:
                 },
             ],
         }
-        deadline = self._clock() + self._timeout_seconds
+        total_timeout_seconds = self._timeout_seconds * self._max_attempts
+        deadline = self._clock() + total_timeout_seconds
         for attempt in range(self._max_attempts):
             remaining = deadline - self._clock()
             if remaining <= 0:
                 return ProviderOutcome(ProviderOutcomeStatus.TIMEOUT)
+            # httpx.Timeout is an I/O-inactivity timeout, not a hard wall-clock
+            # timer. The budget bounds retries to max_attempts and caps
+            # inactivity per attempt, but a peer that continuously trickles
+            # bytes can still exceed the elapsed deadline; that is a known,
+            # accepted transport residual.
+            attempt_timeout = min(remaining, self._timeout_seconds)
             try:
                 response = self._client.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
-                    timeout=httpx.Timeout(remaining, connect=remaining),
+                    timeout=httpx.Timeout(attempt_timeout, connect=attempt_timeout),
                 )
             except httpx.TimeoutException:
                 if self._retry(attempt, deadline):
@@ -134,6 +154,8 @@ class DeepSeekProvider:
                 if self._retry(attempt, deadline):
                     continue
                 return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            if self._clock() >= deadline:
+                return ProviderOutcome(ProviderOutcomeStatus.TIMEOUT)
             if response.status_code in {408, 429} or 500 <= response.status_code <= 599:
                 if self._retry(attempt, deadline, response.headers.get("retry-after")):
                     continue
@@ -180,6 +202,30 @@ class DeepSeekProvider:
         if delay > 0:
             self._sleeper(delay)
         return self._clock() < deadline
+
+
+def provider_timeout_budget_seconds(provider: object) -> float:
+    """Return the configured worst-case adapter budget, or zero for local providers."""
+
+    timeout_seconds = getattr(provider, "timeout_seconds", None)
+    max_attempts = getattr(provider, "max_attempts", None)
+    if (
+        not isinstance(timeout_seconds, (int, float))
+        or isinstance(timeout_seconds, bool)
+        or not math.isfinite(float(timeout_seconds))
+        or timeout_seconds <= 0
+        or not isinstance(max_attempts, int)
+        or isinstance(max_attempts, bool)
+        or max_attempts < 1
+    ):
+        return 0.0
+    return float(timeout_seconds) * max_attempts
+
+
+def stale_reservation_age_seconds(provider: object) -> float:
+    """Keep stale takeover strictly beyond the provider's total call budget."""
+
+    return provider_timeout_budget_seconds(provider) + PROVIDER_CALL_SAFETY_MARGIN_SECONDS
 
 
 def _validate_deepseek_configuration(base_url: str, model_id: str) -> None:

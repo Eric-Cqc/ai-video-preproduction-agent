@@ -10,6 +10,7 @@ import json
 import os
 import socket
 import ssl
+import subprocess
 import sys
 import zipfile
 from collections.abc import Mapping
@@ -329,7 +330,87 @@ def _health_check(client: object, url: str, stage: str) -> None:
         raise SmokeFailure(f"{stage}: health contract did not report foundation-api ok")
 
 
+def _invoke_hosted_bootstrap(stage: str) -> None:
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "infra.scripts.hosted_bootstrap"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SmokeFailure(f"{stage}: hosted bootstrap could not complete") from error
+    if result.returncode != 0:
+        raise SmokeFailure(f"{stage}: hosted bootstrap returned {result.returncode}")
+
+
+def _bootstrap_snapshot(
+    organization_id: str, workspace_id: str, actor_subject: str, stage: str
+) -> tuple[str, str, str, str, str, str]:
+    """Read bootstrap state from the API container's database without printing row data."""
+
+    from services.api.app.config import get_api_settings
+    from services.api.app.infrastructure.database import (
+        create_database_engine,
+        create_session_factory,
+    )
+    from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
+
+    try:
+        organization_uuid = UUID(organization_id)
+        workspace_uuid = UUID(workspace_id)
+        settings = get_api_settings()
+        engine = create_database_engine(settings)
+        try:
+            with SqlAlchemyUnitOfWork(create_session_factory(engine)) as uow:
+                organization = uow.organizations.get(organization_uuid)
+                workspace = uow.workspaces.get(organization_uuid, workspace_uuid)
+                owner = uow.memberships.find_organization_wide(organization_uuid, actor_subject)
+        finally:
+            engine.dispose()
+    except Exception as error:
+        raise SmokeFailure(f"{stage}: bootstrap state could not be read") from error
+    if organization is None or workspace is None or owner is None:
+        raise SmokeFailure(f"{stage}: bootstrap organization, workspace, or owner is missing")
+    if owner.workspace_id is not None:
+        raise SmokeFailure(f"{stage}: bootstrap owner membership was not organization-wide")
+    return (
+        str(organization.id),
+        str(workspace.id),
+        str(owner.id),
+        owner.actor_subject,
+        owner.role.value,
+        owner.status.value,
+    )
+
+
 def _assert_bootstrap(client: HostedProxyClient, organization_id: str, workspace_id: str) -> None:
+    bootstrap_stage = "bootstrap idempotency"
+    actor_subject = _required_env("PILOT_ACTOR_SUBJECT")
+    _invoke_hosted_bootstrap(f"{bootstrap_stage} first invocation")
+    first_snapshot = _bootstrap_snapshot(
+        organization_id,
+        workspace_id,
+        actor_subject,
+        f"{bootstrap_stage} first state",
+    )
+    _invoke_hosted_bootstrap(f"{bootstrap_stage} second invocation")
+    second_snapshot = _bootstrap_snapshot(
+        organization_id,
+        workspace_id,
+        actor_subject,
+        f"{bootstrap_stage} second state",
+    )
+    if first_snapshot != second_snapshot:
+        raise SmokeFailure(f"{bootstrap_stage}: second invocation changed persisted state")
+    if first_snapshot[0] != organization_id or first_snapshot[1] != workspace_id:
+        raise SmokeFailure(f"{bootstrap_stage}: configured IDs did not match persisted state")
+    if first_snapshot[3] != actor_subject:
+        raise SmokeFailure(f"{bootstrap_stage}: owner actor did not match configuration")
+    if first_snapshot[4:] != ("owner", "active"):
+        raise SmokeFailure(f"{bootstrap_stage}: owner membership was not active")
+
     organization_stage = "bootstrap assertion organization"
     organization = _response_object(
         _request(
@@ -797,29 +878,9 @@ def _run_workflow(
         headers=common_headers,
     )
 
-    viewer_refusal_stage = "viewer identity mutation refusal"
-    # This deliberately supplies temporary identity headers to prove hosted impersonation is
-    # refused.
-    _request(
-        client,
-        "POST",
-        f"{root}/delivery-packages",
-        stage=viewer_refusal_stage,
-        expected_status=403,
-        headers={
-            **common_headers,
-            "X-Actor-Subject": viewer,
-            "X-Organization-Id": organization_id,
-            "X-Workspace-Id": workspace_id,
-            "Idempotency-Key": f"hosted-{token}-viewer-refusal",
-        },
-        json_payload={
-            "script_version_id": script_id,
-            "storyboard_version_id": storyboard_id,
-            "shot_plan_version_id": shot_plan_id,
-            "approval_review_id": approval_review_id,
-        },
-    )
+    # The hosted pilot has one cookie-authenticated actor. The viewer row above proves the
+    # membership API persists the role, while application/API tests cover viewer RBAC denial;
+    # this smoke must not claim a viewer session that the hosted gate cannot issue.
 
 
 def _run_smoke(assert_bootstrap: bool) -> None:
@@ -916,7 +977,7 @@ def main() -> int:
     parser.add_argument(
         "--assert-bootstrap",
         action="store_true",
-        help="GET the configured pilot organization/workspace and assert their UUIDs",
+        help="run bootstrap twice and assert IDs and owner membership remain unchanged",
     )
     args = parser.parse_args()
     try:

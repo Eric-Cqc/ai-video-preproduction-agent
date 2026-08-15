@@ -3,7 +3,9 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from infra.scripts.storage_sweep import PendingCleanup, SweepResult, sweep_storage
+import pytest
+
+from infra.scripts.storage_sweep import PendingCleanup, SweepResult, main, sweep_storage
 
 NOW = 1_800_000_000.0
 LOCAL_ADAPTER = "local_filesystem_v1"
@@ -26,6 +28,19 @@ class _MemoryCleanupStore:
     def delete_cleanup_requirement(self, requirement: PendingCleanup) -> None:
         self.deleted_rows.append(requirement)
         self.pending.remove(requirement)
+
+
+class _ReferenceAppearsDuringSweepStore(_MemoryCleanupStore):
+    def __init__(self, key: str) -> None:
+        super().__init__()
+        self.key = key
+        self.reference_calls = 0
+
+    def referenced_storage_keys(self) -> set[str]:
+        self.reference_calls += 1
+        if self.reference_calls == 2:
+            self.referenced.add(self.key)
+        return super().referenced_storage_keys()
 
 
 def _old_file(root: Path, directory: str, key: str) -> Path:
@@ -62,6 +77,19 @@ def test_referenced_file_is_protected(tmp_path: Path) -> None:
     result = _sweep(tmp_path, _MemoryCleanupStore(referenced={key}), apply=True)
 
     assert result.protected_files == 1
+    assert path.exists()
+
+
+def test_file_referenced_during_sweep_is_protected_before_delete(tmp_path: Path) -> None:
+    key = "object-" + "f" * 32
+    path = _old_file(tmp_path, "objects", key)
+    store = _ReferenceAppearsDuringSweepStore(key)
+
+    result = _sweep(tmp_path, store, apply=True)
+
+    assert store.reference_calls >= 2
+    assert result.protected_files == 1
+    assert result.deleted_files == 0
     assert path.exists()
 
 
@@ -115,3 +143,21 @@ def test_failed_pending_deletion_retains_cleanup_row(tmp_path: Path) -> None:
     assert result.failed_deletions == 1
     assert store.pending == [pending]
     assert path.exists()
+
+
+def test_sweep_rejects_grace_period_below_one_hour(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="at least 1 hour"):
+        sweep_storage(
+            tmp_path,
+            _MemoryCleanupStore(),
+            grace_period=timedelta(0),
+            apply=True,
+            now=NOW,
+        )
+
+
+def test_cli_rejects_zero_grace_period(capsys: pytest.CaptureFixture[str]) -> None:
+    result = main(["--database-url", "unused", "--grace-hours", "0"])
+
+    assert result == 2
+    assert "minimum_hours=1" in capsys.readouterr().err

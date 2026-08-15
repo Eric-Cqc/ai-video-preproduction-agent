@@ -28,6 +28,9 @@ from services.api.app.application.model_provider import (
     ProviderOutcome,
     ProviderOutcomeStatus,
 )
+from services.api.app.application.model_provider import (
+    stale_reservation_age_seconds as stale_reservation_age_seconds_for_provider,
+)
 from services.api.app.application.services import (
     MUTATION_ROLES,
     READ_ROLES,
@@ -55,7 +58,6 @@ TEMPLATE_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0.0"
 MAX_OUTPUT = 262_144
 DURATION_TOLERANCE_SECONDS = 1
-STALE_RESERVATION_AGE_SECONDS = 65.0
 FAILED_OPERATION_CODES = frozenset(
     {
         "provider_refusal",
@@ -93,13 +95,17 @@ class VisualPlanningApplicationService:
         *,
         clock: Clock = utc_now,
         id_factory: IdFactory = uuid4,
-        stale_reservation_age_seconds: float = STALE_RESERVATION_AGE_SECONDS,
+        stale_reservation_age_seconds: float | None = None,
     ) -> None:
         self.uow_factory = uow_factory
         self.provider = provider or DeterministicVisualPlanningProvider()
         self.clock = clock
         self.id_factory = id_factory
-        self.stale_reservation_age_seconds = stale_reservation_age_seconds
+        self.stale_reservation_age_seconds = (
+            stale_reservation_age_seconds
+            if stale_reservation_age_seconds is not None
+            else stale_reservation_age_seconds_for_provider(self.provider)
+        )
         self._briefs = BriefApplicationService(uow_factory, clock=clock, id_factory=id_factory)
 
     def generate_storyboard(
@@ -133,6 +139,7 @@ class VisualPlanningApplicationService:
                     return self._storyboard_replay(uow, context, project_id, existing)
             operation = self._reserve_or_recover(
                 uow,
+                context,
                 self._reserve(
                     context,
                     project_id,
@@ -294,6 +301,7 @@ class VisualPlanningApplicationService:
                     return self._shot_plan_replay(uow, context, project_id, existing)
             operation = self._reserve_or_recover(
                 uow,
+                context,
                 self._reserve(
                     context,
                     project_id,
@@ -694,6 +702,7 @@ class VisualPlanningApplicationService:
     def _reserve_or_recover(
         self,
         uow: UnitOfWork,
+        context: TenantContext,
         reservation: VisualPlanningOperation,
     ) -> VisualPlanningOperation:
         existing = uow.visual_planning_operations.get_by_key(
@@ -732,6 +741,22 @@ class VisualPlanningApplicationService:
         )
         if saved is None:
             raise ResourceConflict("visual operation changed before stale recovery")
+        action = (
+            "storyboard.failed"
+            if existing.operation is VisualPlanningOperationType.GENERATE_STORYBOARD
+            else "shot_plan.failed"
+        )
+        uow.audit_events.append(
+            self._audit(
+                context,
+                existing.id,
+                action,
+                {
+                    "operation_id": str(existing.id),
+                    "error_code": "stale_reservation_reclaimed",
+                },
+            )
+        )
         return saved
 
     def _is_stale(self, submitted_at: datetime) -> bool:
