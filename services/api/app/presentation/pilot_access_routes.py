@@ -28,13 +28,24 @@ def _settings(request: Request) -> ApiSettings:
     return cast(ApiSettings, request.app.state.settings)
 
 
+def _client_key(request: Request, settings: ApiSettings) -> str:
+    socket_host = request.client.host if request.client is not None else "unknown"
+    if settings.hosted_pilot_enabled:
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            first_hop = forwarded_for.split(",", 1)[0].strip()
+            if first_hop:
+                return first_hop
+    return socket_host
+
+
 @router.post("/pilot-access", status_code=status.HTTP_204_NO_CONTENT)
 def grant_pilot_access(payload: PilotAccessRequest, request: Request) -> Response:
     settings = _settings(request)
     if not settings.hosted_pilot_enabled:
         return Response(status_code=status.HTTP_404_NOT_FOUND)
     limiter = cast(FailedAccessLimiter, request.app.state.pilot_access_limiter)
-    client_key = request.client.host if request.client is not None else "unknown"
+    client_key = _client_key(request, settings)
     if not limiter.allowed(client_key) or not password_matches(
         payload.password, settings.pilot_access_password or ""
     ):

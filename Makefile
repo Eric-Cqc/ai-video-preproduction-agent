@@ -23,7 +23,7 @@ RC_CHECK_STORAGE_ROOT ?= $(CURDIR)/.local/rc/check-source-objects
 -include .env
 export
 
-.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-upgrade-test db-downgrade db-current db-current-test db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test test-web contract-check build check rc-up rc-seed rc-smoke rc-golden-path-test rc-check rc-down demo-smoke provider-live-smoke hosted-build hosted-up hosted-bootstrap hosted-smoke hosted-logs hosted-down
+.PHONY: setup dev-web dev-api dev-worker dev db-up db-down db-status db-upgrade db-upgrade-test db-downgrade db-current db-current-test db-check db-reset-test test-domain test-persistence test-integration format format-check lint typecheck test test-web contract-check build check rc-up rc-seed rc-smoke rc-golden-path-test rc-check rc-down demo-smoke provider-live-smoke hosted-env-local hosted-build hosted-up hosted-bootstrap hosted-smoke hosted-logs hosted-down hosted-env-file
 
 setup:
 	$(NODE_RUNNER) npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund
@@ -205,22 +205,34 @@ provider-live-smoke:
 	$(UV_RUN) python -m infra.scripts.provider_live_smoke
 
 hosted-build:
+	@test -f .env.hosted || { echo "Missing .env.hosted; run 'make hosted-env-local' for local validation." >&2; exit 1; }
 	$(HOSTED_COMPOSE) build
 
 hosted-up:
+	@test -f .env.hosted || { echo "Missing .env.hosted; run 'make hosted-env-local' for local validation." >&2; exit 1; }
 	$(HOSTED_COMPOSE) up --detach --wait
 
-hosted-bootstrap:
-	$(HOSTED_COMPOSE) exec api alembic upgrade head
-	$(HOSTED_COMPOSE) exec api python -m infra.scripts.hosted_bootstrap
+hosted-env-local:
+	$(UV_RUN) python infra/scripts/make_local_hosted_env.py
 
-hosted-smoke:
-	$(HOSTED_COMPOSE) exec api python -m infra.scripts.hosted_smoke
+hosted-env-file:
+	@test -f .env.hosted || { echo "Missing .env.hosted; run 'make hosted-env-local' for local validation." >&2; exit 1; }
 
-hosted-logs:
+hosted-bootstrap: hosted-env-file
+	$(HOSTED_COMPOSE) exec -T api alembic upgrade head
+	$(HOSTED_COMPOSE) exec -T api python -m infra.scripts.hosted_bootstrap
+
+hosted-smoke: hosted-env-file
+	$(HOSTED_COMPOSE) exec -T \
+		-e PILOT_BASE_URL=http://caddy:80 \
+		-e HOSTED_SMOKE_CA_BUNDLE="$${HOSTED_SMOKE_CA_BUNDLE:-}" \
+		-e HOSTED_SMOKE_INSECURE="$${HOSTED_SMOKE_INSECURE:-}" \
+		api sh -c 'if { test "$${PILOT_DOMAIN}" = localhost || test "$${PILOT_DOMAIN}" = 127.0.0.1; } && test -z "$${HOSTED_SMOKE_CA_BUNDLE}" && test -f /var/lib/caddy-data/caddy/pki/authorities/local/root.crt; then export HOSTED_SMOKE_CA_BUNDLE=/var/lib/caddy-data/caddy/pki/authorities/local/root.crt; fi; exec python -m infra.scripts.hosted_proxy_smoke --assert-bootstrap'
+
+hosted-logs: hosted-env-file
 	$(HOSTED_COMPOSE) logs --follow --tail=100
 
-hosted-down:
+hosted-down: hosted-env-file
 	$(HOSTED_COMPOSE) down
 
 rc-check: db-up db-upgrade-test db-current-test

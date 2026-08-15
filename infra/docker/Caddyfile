@@ -1,5 +1,6 @@
 {$PILOT_DOMAIN} {
     encode zstd gzip
+    # reverse_proxy forwards X-Forwarded-For by default; the hosted API trusts only its first hop.
     reverse_proxy /api/* api:8000
     reverse_proxy web:3000
 }
