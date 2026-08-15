@@ -147,6 +147,18 @@ class DeliveryExportFile:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryExportCleanupRequirement:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    storage_adapter: str
+    storage_key: str
+    reason_code: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class DeliveryOperation:
     id: UUID
     organization_id: UUID

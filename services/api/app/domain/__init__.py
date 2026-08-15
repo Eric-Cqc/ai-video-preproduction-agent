@@ -81,6 +81,7 @@ from services.api.app.domain.models import (
 )
 from services.api.app.domain.review_revision_delivery import (
     ArtifactRevisionLink,
+    DeliveryExportCleanupRequirement,
     DeliveryExportFile,
     DeliveryOperation,
     DeliveryOperationStatus,
@@ -146,6 +147,7 @@ __all__ = [
     "CreativeGenerationOperationType",
     "CreativeRunStatus",
     "ArtifactRevisionLink",
+    "DeliveryExportCleanupRequirement",
     "DeliveryExportFile",
     "DeliveryOperation",
     "DeliveryOperationStatus",

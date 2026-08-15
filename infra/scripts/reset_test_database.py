@@ -23,7 +23,8 @@ def main() -> int:
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "TRUNCATE TABLE delivery_operations, delivery_export_files, "
+                    "TRUNCATE TABLE delivery_operations, delivery_export_cleanup_requirements, "
+                    "delivery_export_files, "
                     "delivery_package_versions, delivery_packages, "
                     "planning_artifact_revision_links, planning_revision_requests, "
                     "planning_reviews, "

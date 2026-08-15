@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from services.api.app.application.errors import ResourceConflict
@@ -29,7 +30,7 @@ def _flush(session: Session, record: object) -> None:
     session.add(record)
     try:
         session.flush()
-    except Exception as error:
+    except IntegrityError as error:
         raise ResourceConflict("visual planning artifact could not be persisted") from error
 
 

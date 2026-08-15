@@ -3,9 +3,9 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import zipfile
 from collections.abc import AsyncIterator, Callable, Iterable
-from contextlib import suppress
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from uuid import UUID, uuid4
@@ -40,6 +40,7 @@ from services.api.app.domain import (
     ArtifactRevisionLink,
     AuditEvent,
     CreativeRunStatus,
+    DeliveryExportCleanupRequirement,
     DeliveryExportFile,
     DeliveryOperation,
     DeliveryOperationStatus,
@@ -57,6 +58,7 @@ from services.api.app.domain import (
 )
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
+logger = logging.getLogger(__name__)
 SCHEMA_VERSION = "delivery-package-v1"
 MAX_EXPORT_BYTES = 10 * 1024 * 1024
 EXPORT_FORMATS = frozenset(
@@ -797,15 +799,15 @@ class ReviewRevisionDeliveryApplicationService:
                 return ExportResult(export, False)
         except StorageError as error:
             if staged_key is not None:
-                self._delete_quietly(staged_key)
+                self._delete_or_record(context, project_id, staged_key)
             if final_key is not None:
-                self._delete_quietly(final_key)
+                self._delete_or_record(context, project_id, final_key)
             raise StorageUnavailable("delivery export storage is unavailable") from error
         except BaseException:
             if staged_key is not None:
-                self._delete_quietly(staged_key)
+                self._delete_or_record(context, project_id, staged_key)
             if final_key is not None:
-                self._delete_quietly(final_key)
+                self._delete_or_record(context, project_id, final_key)
             raise
 
     def read_export(
@@ -1301,9 +1303,34 @@ class ReviewRevisionDeliveryApplicationService:
         except (StorageError, RuntimeError) as error:
             raise StorageUnavailable("delivery export storage is unavailable") from error
 
-    def _delete_quietly(self, key: str) -> None:
-        with suppress(StorageError):
+    def _delete_or_record(self, context: TenantContext, project_id: UUID, key: str) -> None:
+        try:
             self.storage.delete(key)
+        except StorageError as delete_error:
+            try:
+                with self.uow_factory() as uow:
+                    uow.delivery_export_cleanup_requirements.add(
+                        DeliveryExportCleanupRequirement(
+                            id=self.id_factory(),
+                            organization_id=context.organization_id,
+                            workspace_id=context.workspace_id,
+                            project_id=project_id,
+                            storage_adapter=self.storage.adapter_name,
+                            storage_key=key,
+                            reason_code="export_cleanup_failure",
+                            created_at=self.clock(),
+                        )
+                    )
+            except Exception as record_error:
+                logger.error(
+                    "failed to persist bounded delivery export cleanup requirement",
+                    extra={
+                        "event": "delivery_export.cleanup_record_failed",
+                        "correlation_id": context.correlation_id,
+                        "delete_error_type": type(delete_error).__name__,
+                        "record_error_type": type(record_error).__name__,
+                    },
+                )
 
     def _new_revision_request(
         self,

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, case, func, literal, select, update
+from sqlalchemy import Select, case, delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -1170,6 +1170,23 @@ class SqlAlchemySourceObjectCleanupRequirementRepository:
         )
         return requirement
 
+    def list(self) -> list[SourceObjectCleanupRequirement]:
+        rows = self.session.scalars(
+            select(SourceObjectCleanupRequirementRecord).order_by(
+                SourceObjectCleanupRequirementRecord.created_at,
+                SourceObjectCleanupRequirementRecord.id,
+            )
+        ).all()
+        return [_source_object_cleanup_requirement(row) for row in rows]
+
+    def delete(self, requirement_id: UUID) -> None:
+        self.session.execute(
+            delete(SourceObjectCleanupRequirementRecord).where(
+                SourceObjectCleanupRequirementRecord.id == requirement_id
+            )
+        )
+        self.session.flush()
+
 
 class SqlAlchemyDocumentExtractionRepository:
     def __init__(self, session: Session) -> None:
@@ -2018,6 +2035,21 @@ def _source_object(record: SourceObjectRecord) -> SourceObject:
         created_by_actor_subject=record.created_by_actor_subject,
         created_at=record.created_at,
         version=record.version,
+    )
+
+
+def _source_object_cleanup_requirement(
+    record: SourceObjectCleanupRequirementRecord,
+) -> SourceObjectCleanupRequirement:
+    return SourceObjectCleanupRequirement(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        storage_adapter=record.storage_adapter,
+        storage_key=record.storage_key,
+        reason_code=record.reason_code,
+        created_at=record.created_at,
     )
 
 

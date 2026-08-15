@@ -1,12 +1,14 @@
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from services.api.app.application.errors import ResourceConflict
 from services.api.app.domain import (
     ArtifactRevisionLink,
+    DeliveryExportCleanupRequirement,
     DeliveryExportFile,
     DeliveryOperation,
     DeliveryOperationStatus,
@@ -21,6 +23,7 @@ from services.api.app.domain import (
     VersionConflict,
 )
 from services.api.app.infrastructure.models import (
+    DeliveryExportCleanupRequirementRecord,
     DeliveryExportFileRecord,
     DeliveryOperationRecord,
     DeliveryPackageRecord,
@@ -35,7 +38,7 @@ def _flush(session: Session, record: object) -> None:
     session.add(record)
     try:
         session.flush()
-    except Exception as error:
+    except IntegrityError as error:
         raise ResourceConflict("review or delivery record could not be persisted") from error
 
 
@@ -150,6 +153,21 @@ def _to_export(row: DeliveryExportFileRecord) -> DeliveryExportFile:
         storage_key=row.storage_key,
         checksum=row.checksum,
         byte_size=row.byte_size,
+        created_at=row.created_at,
+    )
+
+
+def _to_export_cleanup_requirement(
+    row: DeliveryExportCleanupRequirementRecord,
+) -> DeliveryExportCleanupRequirement:
+    return DeliveryExportCleanupRequirement(
+        id=row.id,
+        organization_id=row.organization_id,
+        workspace_id=row.workspace_id,
+        project_id=row.project_id,
+        storage_adapter=row.storage_adapter,
+        storage_key=row.storage_key,
+        reason_code=row.reason_code,
         created_at=row.created_at,
     )
 
@@ -424,6 +442,44 @@ class SqlAlchemyDeliveryExportFileRepository:
             .order_by(DeliveryExportFileRecord.format)
         ).all()
         return [_to_export(row) for row in rows]
+
+
+class SqlAlchemyDeliveryExportCleanupRequirementRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(
+        self, requirement: DeliveryExportCleanupRequirement
+    ) -> DeliveryExportCleanupRequirement:
+        record = DeliveryExportCleanupRequirementRecord(
+            id=requirement.id,
+            organization_id=requirement.organization_id,
+            workspace_id=requirement.workspace_id,
+            project_id=requirement.project_id,
+            storage_adapter=requirement.storage_adapter,
+            storage_key=requirement.storage_key,
+            reason_code=requirement.reason_code,
+            created_at=requirement.created_at,
+        )
+        _flush(self.session, record)
+        return requirement
+
+    def list(self) -> list[DeliveryExportCleanupRequirement]:
+        rows = self.session.scalars(
+            select(DeliveryExportCleanupRequirementRecord).order_by(
+                DeliveryExportCleanupRequirementRecord.created_at,
+                DeliveryExportCleanupRequirementRecord.id,
+            )
+        ).all()
+        return [_to_export_cleanup_requirement(row) for row in rows]
+
+    def delete(self, requirement_id: UUID) -> None:
+        self.session.execute(
+            delete(DeliveryExportCleanupRequirementRecord).where(
+                DeliveryExportCleanupRequirementRecord.id == requirement_id
+            )
+        )
+        self.session.flush()
 
 
 class SqlAlchemyDeliveryOperationRepository:

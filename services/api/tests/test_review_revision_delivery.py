@@ -71,6 +71,26 @@ class _FailingFinalizeStorage(LocalFilesystemStorageAdapter):
         raise StorageError("injected finalize failure")
 
 
+class _FailingDeleteStorage(LocalFilesystemStorageAdapter):
+    def delete(self, storage_key: str) -> None:
+        if storage_key.startswith("object-"):
+            raise StorageError("injected delete failure")
+        super().delete(storage_key)
+
+
+class _FailingAuditRepository:
+    def append(self, event: object) -> object:
+        del event
+        raise RuntimeError("injected post-finalize failure")
+
+
+class _PostFinalizeFailureUnitOfWork(SqlAlchemyUnitOfWork):
+    def __enter__(self) -> "_PostFinalizeFailureUnitOfWork":
+        super().__enter__()
+        self.audit_events = _FailingAuditRepository()  # type: ignore[assignment]
+        return self
+
+
 class _StaleRevisionRepository:
     def __init__(
         self, delegate: object, stale: object, after_first_read: Callable[[], None]
@@ -491,3 +511,62 @@ def test_export_storage_failure_compensates_staging_and_rolls_back(
             )
             == 0
         )
+
+
+def test_post_finalize_failure_records_durable_cleanup_when_delete_fails(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "durable-cleanup", tmp_path
+    )
+    review = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.PLANNING_BUNDLE,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        outcome=PlanningReviewOutcome.APPROVED,
+        summary="Approved for durable cleanup test.",
+        requested_changes={},
+        idempotency_key="durable-cleanup-review",
+    ).review
+    package = delivery.create_delivery_package(
+        seed.context,
+        seed.project_id,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        approval_review_id=review.id,
+        idempotency_key="durable-cleanup-package",
+    )
+    failing = ReviewRevisionDeliveryApplicationService(
+        lambda: _PostFinalizeFailureUnitOfWork(persistence_session_factory),
+        _FailingDeleteStorage(tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="post-finalize"):
+        failing.export_delivery_package(
+            seed.context,
+            seed.project_id,
+            package.version.id,
+            export_format="manifest.json",
+            idempotency_key="durable-cleanup-export",
+        )
+
+    with database_engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM delivery_export_files")) == 0
+        requirement = connection.execute(
+            text(
+                "SELECT storage_adapter, storage_key, reason_code "
+                "FROM delivery_export_cleanup_requirements"
+            )
+        ).one()
+    assert requirement[0] == "local_filesystem_v1"
+    assert requirement[1].startswith("object-")
+    assert requirement[2] == "export_cleanup_failure"
+    assert (tmp_path / "objects" / requirement[1]).is_file()

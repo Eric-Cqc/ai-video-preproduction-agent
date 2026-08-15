@@ -3014,6 +3014,36 @@ class DeliveryExportFileRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class DeliveryExportCleanupRequirementRecord(Base):
+    __tablename__ = "delivery_export_cleanup_requirements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_delivery_export_cleanup_project_tenant",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "storage_adapter", "storage_key", name="uq_delivery_export_cleanup_storage_key"
+        ),
+        CheckConstraint(
+            "reason_code IN ('export_cleanup_failure')",
+            name="ck_delivery_export_cleanup_reason",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    storage_adapter: Mapped[str] = mapped_column(String(40), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class DeliveryOperationRecord(Base):
     __tablename__ = "delivery_operations"
     __table_args__ = (

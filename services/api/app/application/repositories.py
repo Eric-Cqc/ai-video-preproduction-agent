@@ -20,6 +20,7 @@ from services.api.app.domain import (
     CreativeConceptSelection,
     CreativeGenerationOperation,
     CreativeGenerationOperationType,
+    DeliveryExportCleanupRequirement,
     DeliveryExportFile,
     DeliveryOperation,
     DeliveryOperationType,
@@ -301,6 +302,10 @@ class SourceObjectCleanupRequirementRepository(Protocol):
     def add(
         self, requirement: SourceObjectCleanupRequirement
     ) -> SourceObjectCleanupRequirement: ...
+
+    def list(self) -> list[SourceObjectCleanupRequirement]: ...
+
+    def delete(self, requirement_id: UUID) -> None: ...
 
 
 class DocumentExtractionRepository(Protocol):
@@ -599,6 +604,16 @@ class DeliveryExportFileRepository(Protocol):
         project_id: UUID,
         package_version_id: UUID,
     ) -> list[DeliveryExportFile]: ...
+
+
+class DeliveryExportCleanupRequirementRepository(Protocol):
+    def add(
+        self, requirement: DeliveryExportCleanupRequirement
+    ) -> DeliveryExportCleanupRequirement: ...
+
+    def list(self) -> list[DeliveryExportCleanupRequirement]: ...
+
+    def delete(self, requirement_id: UUID) -> None: ...
 
 
 class DeliveryOperationRepository(Protocol):

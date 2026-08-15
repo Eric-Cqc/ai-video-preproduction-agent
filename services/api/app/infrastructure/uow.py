@@ -17,6 +17,7 @@ from services.api.app.application.repositories import (
     CreativeConceptRunRepository,
     CreativeConceptSelectionRepository,
     CreativeGenerationOperationRepository,
+    DeliveryExportCleanupRequirementRepository,
     DeliveryExportFileRepository,
     DeliveryOperationRepository,
     DeliveryPackageRepository,
@@ -79,6 +80,7 @@ from services.api.app.infrastructure.repositories import (
 )
 from services.api.app.infrastructure.review_revision_repositories import (
     SqlAlchemyArtifactRevisionLinkRepository,
+    SqlAlchemyDeliveryExportCleanupRequirementRepository,
     SqlAlchemyDeliveryExportFileRepository,
     SqlAlchemyDeliveryOperationRepository,
     SqlAlchemyDeliveryPackageRepository,
@@ -135,6 +137,7 @@ class SqlAlchemyUnitOfWork:
     delivery_packages: DeliveryPackageRepository
     delivery_package_versions: DeliveryPackageVersionRepository
     delivery_export_files: DeliveryExportFileRepository
+    delivery_export_cleanup_requirements: DeliveryExportCleanupRequirementRepository
     delivery_operations: DeliveryOperationRepository
 
     def __init__(self, session_factory: SessionFactory) -> None:
@@ -196,6 +199,9 @@ class SqlAlchemyUnitOfWork:
         self.delivery_packages = SqlAlchemyDeliveryPackageRepository(self.session)
         self.delivery_package_versions = SqlAlchemyDeliveryPackageVersionRepository(self.session)
         self.delivery_export_files = SqlAlchemyDeliveryExportFileRepository(self.session)
+        self.delivery_export_cleanup_requirements = (
+            SqlAlchemyDeliveryExportCleanupRequirementRepository(self.session)
+        )
         self.delivery_operations = SqlAlchemyDeliveryOperationRepository(self.session)
         return self
 

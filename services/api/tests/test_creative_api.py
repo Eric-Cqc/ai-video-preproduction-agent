@@ -1,5 +1,5 @@
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -7,6 +7,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from services.api.app.application.brief_services import BriefApplicationService, BriefBundle
 from services.api.app.application.context import TenantContext
@@ -18,6 +20,7 @@ from services.api.app.application.model_provider import (
 from services.api.app.config import ApiSettings
 from services.api.app.domain import BriefSourceType
 from services.api.app.infrastructure.database import SessionFactory
+from services.api.app.infrastructure.models import CreativeConceptRunRecord
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
 from services.api.app.main import create_app
 from services.api.tests.test_brief_api import bootstrap, headers
@@ -188,6 +191,38 @@ def test_creative_api_generation_selection_script_replay_and_permissions(
         ).status_code
         == 200
     )
+
+
+def test_creative_operational_failure_uses_bounded_internal_error_envelope(
+    creative_client: TestClient,
+    persistence_session_factory: SessionFactory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context, project_id, brief = _brief(persistence_session_factory, tmp_path)
+    _app(creative_client).state.creative_application_service.provider = _concept_provider()
+    owner = headers(context.actor_subject, str(context.organization_id), str(context.workspace_id))
+    original_flush = Session.flush
+
+    def fail_creative_run_flush(session: Session, objects: Sequence[object] | None = None) -> None:
+        if any(isinstance(record, CreativeConceptRunRecord) for record in session.new):
+            raise OperationalError(
+                "INSERT contains sensitive database detail", {}, RuntimeError("secret-db-detail")
+            )
+        original_flush(session, objects)
+
+    monkeypatch.setattr(Session, "flush", fail_creative_run_flush)
+    response = creative_client.post(
+        f"{_brief_path(context, project_id, brief)}/concept-runs",
+        headers={**owner, "Idempotency-Key": "concept-operational-failure"},
+        json={},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_error"
+    assert response.json()["error"]["message"] == "Internal server error"
+    assert "sensitive database detail" not in response.text
+    assert "secret-db-detail" not in response.text
 
 
 def test_creative_routes_use_one_opaque_not_found_shape(

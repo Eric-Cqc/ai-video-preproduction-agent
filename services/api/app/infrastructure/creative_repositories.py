@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from services.api.app.application.errors import ResourceConflict
@@ -31,7 +32,7 @@ def _add(session: Session, record: object, value: object) -> object:
     session.add(record)
     try:
         session.flush()
-    except Exception as error:
+    except IntegrityError as error:
         raise ResourceConflict("creative artifact could not be persisted") from error
     return value
 

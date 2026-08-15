@@ -16,6 +16,7 @@ from services.api.app.application.repositories import (
     CreativeConceptRunRepository,
     CreativeConceptSelectionRepository,
     CreativeGenerationOperationRepository,
+    DeliveryExportCleanupRequirementRepository,
     DeliveryExportFileRepository,
     DeliveryOperationRepository,
     DeliveryPackageRepository,
@@ -85,6 +86,7 @@ class UnitOfWork(Protocol):
     delivery_packages: DeliveryPackageRepository
     delivery_package_versions: DeliveryPackageVersionRepository
     delivery_export_files: DeliveryExportFileRepository
+    delivery_export_cleanup_requirements: DeliveryExportCleanupRequirementRepository
     delivery_operations: DeliveryOperationRepository
 
     def __enter__(self) -> Self: ...
