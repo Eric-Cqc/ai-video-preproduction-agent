@@ -25,6 +25,7 @@ from services.api.app.application.errors import (
 from services.api.app.application.model_provider import (
     ModelProviderPort,
     ModelRequest,
+    ProviderOutcome,
     ProviderOutcomeStatus,
 )
 from services.api.app.application.services import (
@@ -161,9 +162,9 @@ class ReviewRevisionDeliveryApplicationService:
 
     def _revision_content(
         self, source: dict[str, object], changes: dict[str, object], mode: str, artifact_type: str
-    ) -> dict[str, object]:
+    ) -> tuple[dict[str, object], ProviderOutcome | None]:
         if self.provider is None:
-            return _revision_content(source, changes, mode, artifact_type)
+            return _revision_content(source, changes, mode, artifact_type), None
         request = ModelRequest(
             instruction_template_id=f"revision_{artifact_type}",
             instruction_template_version="1.0.0",
@@ -201,7 +202,7 @@ class ReviewRevisionDeliveryApplicationService:
             raise InvalidRequest(
                 "revision provider output is schema invalid", code="schema_invalid"
             )
-        return value
+        return value, outcome
 
     def submit_review(
         self,
@@ -454,7 +455,9 @@ class ReviewRevisionDeliveryApplicationService:
                 if existing is None:
                     raise ResourceConflict("revision reservation could not be resolved")
                 return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
-            successors = self._create_successors(uow, context, project_id, request, provider_mode)
+            successors, usage = self._create_successors(
+                uow, context, project_id, request, provider_mode
+            )
             now = self.clock()
             completed = replace(
                 request,
@@ -474,6 +477,10 @@ class ReviewRevisionDeliveryApplicationService:
                 outcome_revision_request_id=request.id,
                 completed_at=now,
                 version=2,
+                input_tokens=usage[0],
+                output_tokens=usage[1],
+                total_tokens=usage[2],
+                provider_request_id=usage[3],
             )
             uow.delivery_operations.finalize_accepted(accepted, expected_version=1)
             uow.audit_events.append(
@@ -836,17 +843,23 @@ class ReviewRevisionDeliveryApplicationService:
         project_id: UUID,
         request: PlanningRevisionRequest,
         mode: str,
-    ) -> tuple[UUID | None, UUID | None, UUID | None]:
+    ) -> tuple[
+        tuple[UUID | None, UUID | None, UUID | None],
+        tuple[int | None, int | None, int | None, str | None],
+    ]:
         script_successor: ScriptVersion | None = None
         storyboard_successor: StoryboardVersion | None = None
         shot_successor: ShotPlanVersion | None = None
+        outcomes: list[ProviderOutcome] = []
         if request.source_script_version_id is not None:
             source_script = self._require_script(
                 uow, context, project_id, request.source_script_version_id
             )
-            content = self._revision_content(
+            content, outcome = self._revision_content(
                 source_script.content, request.requested_changes, mode, "script"
             )
+            if outcome is not None:
+                outcomes.append(outcome)
             self._validate_script(content)
             script_successor = self._successor_script(
                 uow, context, project_id, source_script, content, request.id
@@ -855,9 +868,11 @@ class ReviewRevisionDeliveryApplicationService:
             source_storyboard = self._require_storyboard(
                 uow, context, project_id, request.source_storyboard_version_id
             )
-            content = self._revision_content(
+            content, outcome = self._revision_content(
                 source_storyboard.content, request.requested_changes, mode, "storyboard"
             )
+            if outcome is not None:
+                outcomes.append(outcome)
             script = script_successor or self._require_script(
                 uow, context, project_id, source_storyboard.script_version_id
             )
@@ -875,9 +890,11 @@ class ReviewRevisionDeliveryApplicationService:
             source_shot = self._require_shot_plan(
                 uow, context, project_id, request.source_shot_plan_version_id
             )
-            content = self._revision_content(
+            content, outcome = self._revision_content(
                 source_shot.content, request.requested_changes, mode, "shot_plan"
             )
+            if outcome is not None:
+                outcomes.append(outcome)
             storyboard = storyboard_successor or self._require_storyboard(
                 uow, context, project_id, source_shot.storyboard_version_id
             )
@@ -898,9 +915,12 @@ class ReviewRevisionDeliveryApplicationService:
         if script_successor is None and request.source_script_version_id is not None:
             raise ResourceConflict("script successor was not created")
         return (
-            script_successor.id if script_successor else None,
-            storyboard_successor.id if storyboard_successor else None,
-            shot_successor.id if shot_successor else None,
+            (
+                script_successor.id if script_successor else None,
+                storyboard_successor.id if storyboard_successor else None,
+                shot_successor.id if shot_successor else None,
+            ),
+            _provider_usage(outcomes),
         )
 
     def _successor_script(
@@ -1644,6 +1664,30 @@ def _digest(value: object) -> str:
 
 def _content_digest(value: dict[str, object]) -> str:
     return _digest(value)
+
+
+def _provider_usage(
+    outcomes: list[ProviderOutcome],
+) -> tuple[int | None, int | None, int | None, str | None]:
+    if not outcomes:
+        return None, None, None, None
+    input_tokens = (
+        sum(value.input_tokens or 0 for value in outcomes)
+        if any(value.input_tokens is not None for value in outcomes)
+        else None
+    )
+    output_tokens = (
+        sum(value.output_tokens or 0 for value in outcomes)
+        if any(value.output_tokens is not None for value in outcomes)
+        else None
+    )
+    total_tokens = (
+        sum(value.total_tokens or 0 for value in outcomes)
+        if any(value.total_tokens is not None for value in outcomes)
+        else None
+    )
+    request_ids = [value.provider_request_id for value in outcomes if value.provider_request_id]
+    return input_tokens, output_tokens, total_tokens, request_ids[-1] if request_ids else None
 
 
 def _artifact_digests(

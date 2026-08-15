@@ -3,7 +3,12 @@ from typing import cast
 
 from sqlalchemy import CheckConstraint, Engine, Table, text
 
-from services.api.app.infrastructure.models import DeliveryOperationRecord
+from services.api.app.infrastructure.models import (
+    AuditEventRecord,
+    CreativeGenerationOperationRecord,
+    DeliveryOperationRecord,
+    VisualPlanningOperationRecord,
+)
 
 
 def test_delivery_operation_outcome_metadata_matches_cancellation_migration() -> None:
@@ -21,6 +26,32 @@ def test_delivery_operation_outcome_metadata_matches_cancellation_migration() ->
     assert str(model_constraint.sqltext) == expected
 
 
+def test_failed_generation_constraints_match_failure_migration() -> None:
+    migration = import_module(
+        "infra.migrations.versions.f0a1b2c3d4e5_add_failed_generation_operations"
+    )
+    expected = {
+        "ck_creative_operation_status": cast(str, migration.__dict__["_NEW_CREATIVE_STATUS"]),
+        "ck_creative_operation_outcome": cast(str, migration.__dict__["_NEW_CREATIVE_OUTCOME"]),
+        "ck_visual_operation_status": cast(str, migration.__dict__["_NEW_VISUAL_STATUS"]),
+        "ck_visual_operation_outcome": cast(str, migration.__dict__["_NEW_VISUAL_OUTCOME"]),
+        "ck_audit_action": cast(str, migration.__dict__["_NEW_AUDIT"]),
+    }
+    tables = (
+        cast(Table, CreativeGenerationOperationRecord.__table__),
+        cast(Table, VisualPlanningOperationRecord.__table__),
+        cast(Table, AuditEventRecord.__table__),
+    )
+    actual = {
+        constraint.name: str(constraint.sqltext)
+        for table in tables
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint) and constraint.name in expected
+    }
+
+    assert actual == expected
+
+
 def test_database_schema_is_at_expected_migration_head(database_engine: Engine) -> None:
     with database_engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
@@ -32,7 +63,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "d5e6f7a8b9c0"
+    assert revision == "f0a1b2c3d4e5"
     assert tables == {
         "organizations",
         "workspaces",

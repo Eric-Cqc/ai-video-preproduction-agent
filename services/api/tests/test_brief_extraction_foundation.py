@@ -59,7 +59,14 @@ def test_valid_candidate_is_immutable_human_review_artifact(
     del clean_database
     target = _source(persistence_session_factory, tmp_path)
     provider = DeterministicFakeProvider(
-        ProviderOutcome(ProviderOutcomeStatus.SUCCESS, _valid_output())
+        ProviderOutcome(
+            ProviderOutcomeStatus.SUCCESS,
+            _valid_output(),
+            input_tokens=11,
+            output_tokens=22,
+            total_tokens=33,
+            provider_request_id="brief-request-1",
+        )
     )
     result = StructuredBriefExtractionService(
         lambda: SqlAlchemyUnitOfWork(persistence_session_factory), provider
@@ -83,7 +90,14 @@ def test_valid_candidate_is_immutable_human_review_artifact(
         payload = connection.scalar(
             text("SELECT payload FROM audit_events WHERE action='brief_extraction.completed'")
         )
+        usage = connection.execute(
+            text(
+                "SELECT input_tokens, output_tokens, total_tokens, provider_request_id "
+                "FROM brief_extraction_runs"
+            )
+        ).one()
     assert counts == (1, 1, 0, 0, 0, 1)
+    assert usage == (11, 22, 33, "brief-request-1")
     serialized_audit = json.dumps(payload)
     assert "untrusted source text" not in serialized_audit
     assert _valid_output() not in serialized_audit

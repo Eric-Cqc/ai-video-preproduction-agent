@@ -1,14 +1,23 @@
 import json
+import math
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Protocol
+from urllib.parse import urlparse
 
 import httpx
 
-DEEPSEEK_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_COMPLETIONS_URL = f"{DEEPSEEK_BASE_URL}/chat/completions"
 DEEPSEEK_PROVIDER_ID = "deepseek"
 DEEPSEEK_MODEL_ID = "deepseek-v4-flash"
 SAFE_USER_AGENT = "ai-video-preproduction-agent/0.1"
+MAX_RETRY_AFTER_SECONDS = 5.0
+RETRY_BACKOFF_SECONDS = (0.5, 1.0)
 
 
 class ProviderOutcomeStatus(StrEnum):
@@ -35,6 +44,7 @@ class ProviderOutcome:
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    provider_request_id: str | None = None
 
 
 class ModelProviderPort(Protocol):
@@ -54,18 +64,32 @@ class DeepSeekProvider:
         self,
         *,
         api_key: str,
+        base_url: str,
+        model_id: str,
         timeout_seconds: float,
         max_attempts: int,
         max_input_bytes: int,
         max_output_bytes: int,
         transport: httpx.BaseTransport | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        sleeper: Callable[[float], None] = time.sleep,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         if not api_key:
             raise ValueError("DeepSeek API key is required")
+        _validate_deepseek_configuration(base_url, model_id)
+        if not 1 <= max_attempts <= 2:
+            raise ValueError("DeepSeek max attempts must be between 1 and 2")
         self._api_key = api_key
+        self.base_url = base_url
+        self.model_id = model_id
         self._max_attempts = max_attempts
         self._max_input_bytes = max_input_bytes
         self._max_output_bytes = max_output_bytes
+        self._timeout_seconds = timeout_seconds
+        self._clock = clock
+        self._sleeper = sleeper
+        self._wall_clock = wall_clock
         self._client = httpx.Client(
             transport=transport,
             timeout=httpx.Timeout(timeout_seconds, connect=timeout_seconds),
@@ -91,19 +115,27 @@ class DeepSeekProvider:
                 },
             ],
         }
+        deadline = self._clock() + self._timeout_seconds
         for attempt in range(self._max_attempts):
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                return ProviderOutcome(ProviderOutcomeStatus.TIMEOUT)
             try:
-                response = self._client.post(DEEPSEEK_COMPLETIONS_URL, json=payload)
+                response = self._client.post(
+                    f"{self.base_url}/chat/completions",
+                    json=payload,
+                    timeout=httpx.Timeout(remaining, connect=remaining),
+                )
             except httpx.TimeoutException:
-                if attempt + 1 < self._max_attempts:
+                if self._retry(attempt, deadline):
                     continue
                 return ProviderOutcome(ProviderOutcomeStatus.TIMEOUT)
             except httpx.TransportError:
-                if attempt + 1 < self._max_attempts:
+                if self._retry(attempt, deadline):
                     continue
                 return ProviderOutcome(ProviderOutcomeStatus.ERROR)
             if response.status_code in {408, 429} or 500 <= response.status_code <= 599:
-                if attempt + 1 < self._max_attempts:
+                if self._retry(attempt, deadline, response.headers.get("retry-after")):
                     continue
                 return ProviderOutcome(
                     ProviderOutcomeStatus.TIMEOUT
@@ -130,10 +162,66 @@ class DeepSeekProvider:
                     _bounded_usage(usage.get("prompt_tokens")),
                     _bounded_usage(usage.get("completion_tokens")),
                     _bounded_usage(usage.get("total_tokens")),
+                    _bounded_request_id(body.get("id")),
                 )
             except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
                 return ProviderOutcome(ProviderOutcomeStatus.ERROR)
         return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+
+    def _retry(self, attempt: int, deadline: float, retry_after: str | None = None) -> bool:
+        if attempt + 1 >= self._max_attempts:
+            return False
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            return False
+        delay = _retry_delay(attempt, retry_after, self._wall_clock())
+        if delay >= remaining:
+            return False
+        if delay > 0:
+            self._sleeper(delay)
+        return self._clock() < deadline
+
+
+def _validate_deepseek_configuration(base_url: str, model_id: str) -> None:
+    parsed = urlparse(base_url)
+    if (
+        base_url != DEEPSEEK_BASE_URL
+        or parsed.scheme != "https"
+        or parsed.netloc != "api.deepseek.com"
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("DeepSeek base URL must be the approved HTTPS origin")
+    if model_id != DEEPSEEK_MODEL_ID:
+        raise ValueError("DeepSeek model ID must be deepseek-v4-flash")
+
+
+def _retry_delay(attempt: int, retry_after: str | None, wall_now: float) -> float:
+    if retry_after is not None:
+        parsed = _parse_retry_after(retry_after, wall_now)
+        if parsed is not None:
+            return min(parsed, MAX_RETRY_AFTER_SECONDS)
+    return min(RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)], 2.0)
+
+
+def _parse_retry_after(value: str, wall_now: float) -> float | None:
+    try:
+        delay = float(value.strip())
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        delay = retry_at.timestamp() - wall_now
+    if not math.isfinite(delay) or delay < 0:
+        return None
+    return delay
 
 
 def _bounded_usage(value: object) -> int | None:
@@ -142,6 +230,10 @@ def _bounded_usage(value: object) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10_000_000
         else None
     )
+
+
+def _bounded_request_id(value: object) -> str | None:
+    return value if isinstance(value, str) and 1 <= len(value) <= 200 else None
 
 
 class DeterministicFakeProvider:

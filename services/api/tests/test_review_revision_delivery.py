@@ -2,8 +2,10 @@ import hashlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import Engine, text
 
 from services.api.app.application.errors import ApplicationError, ResourceConflict, ResourceNotFound
@@ -20,6 +22,9 @@ from services.api.app.application.visual_planning_services import (
 from services.api.app.domain import PlanningReviewOutcome, ReviewArtifactType
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
+from services.api.app.presentation.review_revision_delivery_schemas import (
+    PlanningReviewSubmitRequest,
+)
 from services.api.tests.test_visual_planning_persistence import (
     ProjectSeed,
     ScriptGraph,
@@ -27,6 +32,40 @@ from services.api.tests.test_visual_planning_persistence import (
     _seed_project,
 )
 from services.api.tests.test_visual_planning_services import _make_script_usable
+
+
+def _review_request(requested_changes: dict[str, object]) -> PlanningReviewSubmitRequest:
+    return PlanningReviewSubmitRequest(
+        artifact_type="script",
+        script_version_id=UUID("00000000-0000-0000-0000-000000000001"),
+        outcome="revision_requested",
+        summary="Bounded review request",
+        requested_changes=requested_changes,
+    )
+
+
+def test_requested_changes_bounds_accept_valid_payload() -> None:
+    value: object = "ok"
+    for _ in range(7):
+        value = {"next": value}
+
+    request = _review_request({"nested": value})
+
+    assert request.requested_changes["nested"] == value
+
+
+def test_requested_changes_rejects_oversized_serialized_payload() -> None:
+    with pytest.raises(ValidationError, match="maximum serialized size"):
+        _review_request({"note": "x" * (16 * 1024)})
+
+
+def test_requested_changes_rejects_excessive_nesting() -> None:
+    value: object = "too deep"
+    for _ in range(8):
+        value = {"next": value}
+
+    with pytest.raises(ValidationError, match="maximum nesting depth"):
+        _review_request({"nested": value})
 
 
 def _services(

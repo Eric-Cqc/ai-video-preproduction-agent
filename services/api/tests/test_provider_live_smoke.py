@@ -229,6 +229,8 @@ def test_main_prints_only_the_safe_summary(
         lambda: SimpleNamespace(
             model_provider="deepseek",
             deepseek_api_key="fixture-only-value",
+            deepseek_base_url="https://api.deepseek.com",
+            deepseek_model="deepseek-v4-flash",
             deepseek_timeout_seconds=1,
         ),
     )
@@ -272,6 +274,8 @@ def test_main_suppresses_http_request_info_logs(
         lambda: SimpleNamespace(
             model_provider="deepseek",
             deepseek_api_key="fixture-only-value",
+            deepseek_base_url="https://api.deepseek.com",
+            deepseek_model="deepseek-v4-flash",
             deepseek_timeout_seconds=1,
         ),
     )

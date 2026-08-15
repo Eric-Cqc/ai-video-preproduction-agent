@@ -174,6 +174,10 @@ def _to_operation(row: DeliveryOperationRecord) -> DeliveryOperation:
         completed_at=row.completed_at,
         correlation_id=row.correlation_id,
         version=row.version,
+        input_tokens=row.input_tokens,
+        output_tokens=row.output_tokens,
+        total_tokens=row.total_tokens,
+        provider_request_id=row.provider_request_id,
     )
 
 
@@ -617,4 +621,8 @@ def _operation_values(value: DeliveryOperation) -> dict[str, object]:
         "completed_at": value.completed_at,
         "correlation_id": value.correlation_id,
         "version": value.version,
+        "input_tokens": value.input_tokens,
+        "output_tokens": value.output_tokens,
+        "total_tokens": value.total_tokens,
+        "provider_request_id": value.provider_request_id,
     }

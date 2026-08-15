@@ -232,6 +232,66 @@ class SqlAlchemyCreativeGenerationOperationRepository:
             raise VersionConflict("creative operation changed before finalization")
         return _operation(record)
 
+    def finalize_failed(
+        self, operation: CreativeGenerationOperation, *, expected_version: int
+    ) -> CreativeGenerationOperation:
+        record = self.session.scalar(
+            update(CreativeGenerationOperationRecord)
+            .where(
+                CreativeGenerationOperationRecord.id == operation.id,
+                CreativeGenerationOperationRecord.organization_id == operation.organization_id,
+                CreativeGenerationOperationRecord.workspace_id == operation.workspace_id,
+                CreativeGenerationOperationRecord.project_id == operation.project_id,
+                CreativeGenerationOperationRecord.operation == operation.operation.value,
+                CreativeGenerationOperationRecord.idempotency_key == operation.idempotency_key,
+                CreativeGenerationOperationRecord.request_digest == operation.request_digest,
+                CreativeGenerationOperationRecord.status == "reserved",
+                CreativeGenerationOperationRecord.version == expected_version,
+            )
+            .values(
+                status="failed",
+                outcome_concept_run_id=None,
+                outcome_candidate_id=None,
+                outcome_selection_id=None,
+                outcome_script_run_id=None,
+                outcome_script_version_id=None,
+                completed_at=operation.completed_at,
+                failure_code=operation.failure_code,
+                version=operation.version,
+            )
+            .returning(CreativeGenerationOperationRecord)
+        )
+        if record is None:
+            raise VersionConflict("creative operation changed before failure finalization")
+        return _operation(record)
+
+    def takeover(
+        self, operation: CreativeGenerationOperation, *, expected_version: int
+    ) -> CreativeGenerationOperation | None:
+        record = self.session.scalar(
+            update(CreativeGenerationOperationRecord)
+            .where(
+                CreativeGenerationOperationRecord.id == operation.id,
+                CreativeGenerationOperationRecord.organization_id == operation.organization_id,
+                CreativeGenerationOperationRecord.workspace_id == operation.workspace_id,
+                CreativeGenerationOperationRecord.project_id == operation.project_id,
+                CreativeGenerationOperationRecord.operation == operation.operation.value,
+                CreativeGenerationOperationRecord.idempotency_key == operation.idempotency_key,
+                CreativeGenerationOperationRecord.request_digest == operation.request_digest,
+                CreativeGenerationOperationRecord.status == "reserved",
+                CreativeGenerationOperationRecord.version == expected_version,
+            )
+            .values(
+                submitted_by_actor_subject=operation.submitted_by_actor_subject,
+                submitted_at=operation.submitted_at,
+                completed_at=None,
+                failure_code=None,
+                version=operation.version,
+            )
+            .returning(CreativeGenerationOperationRecord)
+        )
+        return _operation(record) if record is not None else None
+
 
 def _run_values(value: CreativeConceptRun) -> dict[str, object]:
     return {
@@ -289,6 +349,10 @@ def _concept_run(r: CreativeConceptRunRecord) -> CreativeConceptRun:
         r.created_at,
         r.completed_at,
         r.version,
+        r.input_tokens,
+        r.output_tokens,
+        r.total_tokens,
+        r.provider_request_id,
     )
 
 
@@ -345,6 +409,10 @@ def _script_run(r: ScriptRunRecord) -> ScriptRun:
         r.created_at,
         r.completed_at,
         r.version,
+        r.input_tokens,
+        r.output_tokens,
+        r.total_tokens,
+        r.provider_request_id,
     )
 
 
@@ -388,4 +456,5 @@ def _operation(r: CreativeGenerationOperationRecord) -> CreativeGenerationOperat
         r.completed_at,
         r.correlation_id,
         r.version,
+        r.failure_code,
     )

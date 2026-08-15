@@ -1,7 +1,8 @@
+import json
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ReviewArtifactTypeLiteral = Literal["script", "storyboard", "shot_plan", "planning_bundle"]
 ReviewOutcomeLiteral = Literal["approved", "revision_requested", "rejected"]
@@ -28,6 +29,9 @@ ExportFormatLiteral = Literal[
     "delivery-package.zip",
 ]
 
+MAX_REQUESTED_CHANGES_BYTES = 16 * 1024
+MAX_REQUESTED_CHANGES_DEPTH = 8
+
 
 class PlanningReviewSubmitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,6 +43,21 @@ class PlanningReviewSubmitRequest(BaseModel):
     outcome: ReviewOutcomeLiteral
     summary: str = Field(min_length=1, max_length=1000)
     requested_changes: dict[str, object] = Field(default_factory=dict)
+
+    @field_validator("requested_changes")
+    @classmethod
+    def validate_requested_changes_bounds(cls, value: dict[str, object]) -> dict[str, object]:
+        try:
+            serialized = json.dumps(
+                value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ).encode()
+        except (TypeError, ValueError) as error:
+            raise ValueError("requested_changes must contain JSON values") from error
+        if len(serialized) > MAX_REQUESTED_CHANGES_BYTES:
+            raise ValueError("requested_changes exceeds the maximum serialized size")
+        if _max_container_depth(value) > MAX_REQUESTED_CHANGES_DEPTH:
+            raise ValueError("requested_changes exceeds the maximum nesting depth")
+        return value
 
     @model_validator(mode="after")
     def validate_artifact_pair(self) -> "PlanningReviewSubmitRequest":
@@ -53,6 +72,20 @@ class PlanningReviewSubmitRequest(BaseModel):
         if self.outcome != "revision_requested" and self.requested_changes:
             raise ValueError("requested_changes requires revision_requested")
         return self
+
+
+def _max_container_depth(value: object) -> int:
+    maximum = 0
+    pending: list[tuple[object, int]] = [(value, 0)]
+    while pending:
+        current, depth = pending.pop()
+        if not isinstance(current, (dict, list, tuple)):
+            continue
+        current_depth = depth + 1
+        maximum = max(maximum, current_depth)
+        children = current.values() if isinstance(current, dict) else current
+        pending.extend((child, current_depth) for child in children)
+    return maximum
 
 
 class RevisionCompleteRequest(BaseModel):

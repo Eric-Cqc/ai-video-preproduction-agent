@@ -469,6 +469,12 @@ class CreativeGenerationOperationRepository(Protocol):
     def finalize_accepted(
         self, operation: CreativeGenerationOperation, *, expected_version: int
     ) -> CreativeGenerationOperation: ...
+    def finalize_failed(
+        self, operation: CreativeGenerationOperation, *, expected_version: int
+    ) -> CreativeGenerationOperation: ...
+    def takeover(
+        self, operation: CreativeGenerationOperation, *, expected_version: int
+    ) -> CreativeGenerationOperation | None: ...
 
 
 class StoryboardRunRepository(Protocol):
@@ -528,6 +534,12 @@ class VisualPlanningOperationRepository(Protocol):
     def finalize_accepted(
         self, value: VisualPlanningOperation, *, expected_version: int
     ) -> VisualPlanningOperation: ...
+    def finalize_failed(
+        self, value: VisualPlanningOperation, *, expected_version: int
+    ) -> VisualPlanningOperation: ...
+    def takeover(
+        self, value: VisualPlanningOperation, *, expected_version: int
+    ) -> VisualPlanningOperation | None: ...
 
 
 class PlanningReviewRepository(Protocol):

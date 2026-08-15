@@ -395,6 +395,7 @@ class StructuredBriefExtractionService:
                 for issue in detect_requirement_issues(candidate)
             ]
         completed_at = self.clock()
+        usage = outcome if outcome.status is ProviderOutcomeStatus.SUCCESS else None
         run_id = self.id_factory()
         run = BriefExtractionRun(
             id=run_id,
@@ -417,6 +418,10 @@ class StructuredBriefExtractionService:
             candidate_issues=issue_candidates,
             created_by_actor_subject=context.actor_subject,
             created_at=completed_at,
+            input_tokens=usage.input_tokens if usage else None,
+            output_tokens=usage.output_tokens if usage else None,
+            total_tokens=usage.total_tokens if usage else None,
+            provider_request_id=usage.provider_request_id if usage else None,
         )
         attempt = BriefExtractionAttempt(
             id=self.id_factory(),
