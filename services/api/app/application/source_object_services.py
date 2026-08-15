@@ -24,6 +24,7 @@ from services.api.app.application.storage import (
     StorageError,
     StoragePort,
     StorageValidationError,
+    preflight_read,
 )
 from services.api.app.application.uow import UnitOfWork
 from services.api.app.domain import (
@@ -280,9 +281,9 @@ class SourceObjectApplicationService:
     ) -> tuple[SourceObject, Iterator[bytes]]:
         source_object = self.get(context, project_id, source_asset_id, source_asset_version_id)
         try:
-            return source_object, self.storage.read(source_object.storage_key)
+            return source_object, preflight_read(self.storage, source_object.storage_key)
         except StorageError as error:
-            raise StorageUnavailable("Object storage is unavailable") from error
+            raise ResourceNotFound("source object content is unavailable") from error
 
     def _authorize_target(
         self,

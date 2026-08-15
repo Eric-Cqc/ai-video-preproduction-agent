@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, text
 
 from services.api.app.application.brief_services import BriefApplicationService, BriefBundle
 from services.api.app.application.context import TenantContext
@@ -71,7 +72,10 @@ def _app(client: TestClient) -> FastAPI:
 
 
 def test_creative_api_generation_selection_script_replay_and_permissions(
-    creative_client: TestClient, persistence_session_factory: SessionFactory, tmp_path: Path
+    creative_client: TestClient,
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    tmp_path: Path,
 ) -> None:
     context, project_id, brief = _brief(persistence_session_factory, tmp_path)
     _app(creative_client).state.creative_application_service.provider = _concept_provider()
@@ -101,6 +105,53 @@ def test_creative_api_generation_selection_script_replay_and_permissions(
     )
     assert membership.status_code == 201
     viewer = headers(member, str(context.organization_id), str(context.workspace_id))
+    replay_as_viewer = creative_client.post(
+        f"{_brief_path(context, project_id, brief)}/concept-runs",
+        headers={**viewer, "Idempotency-Key": "concept-api-1"},
+        json={},
+    )
+    fresh_as_viewer = creative_client.post(
+        f"{_brief_path(context, project_id, brief)}/concept-runs",
+        headers={**viewer, "Idempotency-Key": "concept-api-viewer-fresh"},
+        json={},
+    )
+    assert replay_as_viewer.status_code == fresh_as_viewer.status_code == 403
+
+    removed_member = "actor:creative-removed"
+    membership = creative_client.post(
+        f"/api/v1/organizations/{context.organization_id}/workspaces/{context.workspace_id}/memberships",
+        headers=owner,
+        json={"actor_subject": removed_member, "role": "member"},
+    )
+    assert membership.status_code == 201
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE memberships SET status = 'suspended' "
+                "WHERE organization_id = :organization_id AND workspace_id = :workspace_id "
+                "AND actor_subject = :actor_subject"
+            ),
+            {
+                "organization_id": context.organization_id,
+                "workspace_id": context.workspace_id,
+                "actor_subject": removed_member,
+            },
+        )
+    removed_headers = headers(
+        removed_member, str(context.organization_id), str(context.workspace_id)
+    )
+    replay_as_removed = creative_client.post(
+        f"{_brief_path(context, project_id, brief)}/concept-runs",
+        headers={**removed_headers, "Idempotency-Key": "concept-api-1"},
+        json={},
+    )
+    fresh_as_removed = creative_client.post(
+        f"{_brief_path(context, project_id, brief)}/concept-runs",
+        headers={**removed_headers, "Idempotency-Key": "concept-api-removed-fresh"},
+        json={},
+    )
+    assert replay_as_removed.status_code == fresh_as_removed.status_code == 404
+
     candidate_path = (
         f"/api/v1/organizations/{context.organization_id}/workspaces/{context.workspace_id}"
         f"/projects/{project_id}/concept-runs/{run_id}/candidates"

@@ -18,6 +18,36 @@ class BriefExtractionAttemptStatus(StrEnum):
     PROVIDER_ERROR = "provider_error"
 
 
+class BriefExtractionOperationType(StrEnum):
+    BRIEF_EXTRACTION = "brief_extraction"
+
+
+class BriefExtractionOperationStatus(StrEnum):
+    RESERVED = "reserved"
+    ACCEPTED = "accepted"
+
+
+@dataclass(frozen=True, slots=True)
+class BriefExtractionOperation:
+    id: UUID
+    organization_id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    source_asset_id: UUID
+    source_asset_version_id: UUID
+    document_extraction_id: UUID
+    operation: BriefExtractionOperationType
+    run_id: UUID | None
+    idempotency_key: str
+    request_digest: str
+    status: BriefExtractionOperationStatus
+    submitted_by_actor_subject: str
+    submitted_at: datetime
+    completed_at: datetime | None
+    correlation_id: str
+    version: int
+
+
 class BriefCandidateReviewAction(StrEnum):
     ACCEPT = "accept"
     REJECT = "reject"

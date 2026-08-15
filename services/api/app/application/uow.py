@@ -6,6 +6,7 @@ from services.api.app.application.repositories import (
     AuditEventRepository,
     BriefCandidateReviewRepository,
     BriefExtractionAttemptRepository,
+    BriefExtractionOperationRepository,
     BriefExtractionRunRepository,
     BriefIngestionRepository,
     BriefIngestionSourceAssetRepository,
@@ -63,6 +64,7 @@ class UnitOfWork(Protocol):
     document_extractions: DocumentExtractionRepository
     document_extraction_operations: DocumentExtractionOperationRepository
     brief_extraction_runs: BriefExtractionRunRepository
+    brief_extraction_operations: BriefExtractionOperationRepository
     brief_extraction_attempts: BriefExtractionAttemptRepository
     brief_candidate_reviews: BriefCandidateReviewRepository
     creative_concept_runs: CreativeConceptRunRepository

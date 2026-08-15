@@ -1,8 +1,10 @@
 import hashlib
 from collections.abc import Iterator
 from pathlib import Path
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
@@ -136,6 +138,28 @@ def test_upload_replay_read_and_safe_response(
     assert isinstance(payload, dict)
     assert "checksum" not in str(payload).lower()
     assert "filename" not in str(payload).lower()
+
+
+def test_missing_source_object_is_rejected_before_streaming(
+    source_object_client: TestClient, database_engine: Engine
+) -> None:
+    target = _create_target(source_object_client, b"content", "missing-stream")
+    created = source_object_client.post(
+        _upload_path(target),
+        headers=_upload_headers(target, "missing-stream-key"),
+        content=b"content",
+    )
+    assert created.status_code == 201, created.text
+    with database_engine.connect() as connection:
+        storage_key = connection.scalar(text("SELECT storage_key FROM source_objects"))
+    cast(FastAPI, source_object_client.app).state.source_object_application_service.storage.delete(
+        storage_key
+    )
+
+    object_path = _upload_path(target).removesuffix("/uploads") + "/object/content"
+    missing = source_object_client.get(object_path, headers=_upload_headers(target, "read-key"))
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "resource_not_found"
 
 
 def test_same_key_different_bytes_is_conflict(source_object_client: TestClient) -> None:

@@ -197,13 +197,12 @@ def cancel_revision(
     service: ServiceDependency,
     response: Response,
 ) -> dict[str, object]:
-    return {
-        "revision_request": _revision(
-            service.cancel_revision(
-                context, project_id, revision_request_id, idempotency_key=idempotency_key
-            )
-        )
-    }
+    result = service.cancel_revision(
+        context, project_id, revision_request_id, idempotency_key=idempotency_key
+    )
+    if result.replayed:
+        response.status_code = status.HTTP_200_OK
+    return {"revision_request": _revision(result.request), "replayed": result.replayed}
 
 
 @router.post(

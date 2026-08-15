@@ -484,6 +484,12 @@ class BriefIngestionRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    result_brief_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    result_brief_latest_version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_brief_aggregate_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_brief_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class BriefIngestionSourceAssetRecord(Base):
@@ -848,6 +854,7 @@ class SourceAssetOperationRecord(Base):
             "request_digest ~ '^[0-9a-f]{64}$'",
             name="ck_source_asset_operation_digest",
         ),
+        CheckConstraint("duplicate_count >= 0", name="ck_source_asset_operation_duplicate_count"),
         CheckConstraint("version >= 1", name="ck_source_asset_operation_version"),
         CheckConstraint(
             "(status = 'reserved' AND source_asset_id IS NULL "
@@ -879,6 +886,15 @@ class SourceAssetOperationRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    duplicate_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    result_asset_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    result_asset_latest_version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_asset_aggregate_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_asset_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class SourceObjectRecord(Base):
@@ -1231,6 +1247,95 @@ class DocumentExtractionOperationRecord(Base):
     source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     extraction_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    submitted_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    correlation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+
+
+class BriefExtractionOperationRecord(Base):
+    __tablename__ = "brief_extraction_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "operation",
+            "idempotency_key",
+            name="uq_brief_extraction_operation_key",
+        ),
+        ForeignKeyConstraint(
+            [
+                "organization_id",
+                "workspace_id",
+                "project_id",
+                "source_asset_id",
+                "source_asset_version_id",
+            ],
+            [
+                "source_asset_versions.organization_id",
+                "source_asset_versions.workspace_id",
+                "source_asset_versions.project_id",
+                "source_asset_versions.source_asset_id",
+                "source_asset_versions.id",
+            ],
+            name="fk_brief_extraction_operations_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "document_extraction_id"],
+            [
+                "document_extractions.organization_id",
+                "document_extractions.workspace_id",
+                "document_extractions.project_id",
+                "document_extractions.id",
+            ],
+            name="fk_brief_extraction_operations_document_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "run_id"],
+            [
+                "brief_extraction_runs.organization_id",
+                "brief_extraction_runs.workspace_id",
+                "brief_extraction_runs.project_id",
+                "brief_extraction_runs.id",
+            ],
+            name="fk_brief_extraction_operations_run_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "operation = 'brief_extraction'", name="ck_brief_extraction_operation_type"
+        ),
+        CheckConstraint(
+            "request_digest ~ '^[0-9a-f]{64}$'", name="ck_brief_extraction_operation_digest"
+        ),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted')", name="ck_brief_extraction_operation_status"
+        ),
+        CheckConstraint("version >= 1", name="ck_brief_extraction_operation_version"),
+        CheckConstraint(
+            "(status='reserved' AND run_id IS NULL AND completed_at IS NULL) OR "
+            "(status='accepted' AND run_id IS NOT NULL AND completed_at IS NOT NULL)",
+            name="ck_brief_extraction_operation_outcome",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    source_asset_version_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    document_extraction_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    operation: Mapped[str] = mapped_column(String(40), nullable=False)
+    run_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -2979,7 +3084,7 @@ class DeliveryOperationRecord(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "operation IN ('submit_planning_review', 'create_revision_request', 'complete_revision_request', 'create_delivery_package', 'export_delivery_package')",
+            "operation IN ('submit_planning_review', 'create_revision_request', 'complete_revision_request', 'cancel_revision_request', 'create_delivery_package', 'export_delivery_package')",
             name="ck_delivery_operation_type",
         ),
         CheckConstraint("status IN ('reserved', 'accepted')", name="ck_delivery_operation_status"),
@@ -2987,7 +3092,7 @@ class DeliveryOperationRecord(Base):
         CheckConstraint("version >= 1", name="ck_delivery_operation_version"),
         CheckConstraint(
             "(status = 'reserved' AND completed_at IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR "
-            "(status = 'accepted' AND completed_at IS NOT NULL AND ((operation = 'submit_planning_review' AND outcome_review_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_revision_request' AND outcome_review_id IS NOT NULL AND outcome_revision_request_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'complete_revision_request' AND outcome_revision_request_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_delivery_package' AND outcome_delivery_package_id IS NOT NULL AND outcome_delivery_package_version_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'export_delivery_package' AND outcome_export_file_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL)))",
+            "(status = 'accepted' AND completed_at IS NOT NULL AND ((operation = 'submit_planning_review' AND outcome_review_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_revision_request' AND outcome_review_id IS NOT NULL AND outcome_revision_request_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation IN ('complete_revision_request', 'cancel_revision_request') AND outcome_revision_request_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_delivery_package' AND outcome_delivery_package_id IS NOT NULL AND outcome_delivery_package_version_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'export_delivery_package' AND outcome_export_file_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL)))",
             name="ck_delivery_operation_outcome",
         ),
         UniqueConstraint(

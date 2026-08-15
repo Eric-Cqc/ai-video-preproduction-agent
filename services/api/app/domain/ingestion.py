@@ -3,6 +3,8 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
+from services.api.app.domain.brief import BriefStatus
+
 
 class BriefIngestionOperation(StrEnum):
     CREATE_BRIEF = "create_brief"
@@ -48,6 +50,10 @@ class BriefIngestion:
     completed_at: datetime | None
     correlation_id: str
     version: int
+    result_brief_status: BriefStatus | None = None
+    result_brief_latest_version_number: int | None = None
+    result_brief_aggregate_version: int | None = None
+    result_brief_updated_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

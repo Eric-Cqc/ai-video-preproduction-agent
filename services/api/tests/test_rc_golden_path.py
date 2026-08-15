@@ -220,7 +220,7 @@ def test_complete_rc_golden_path_uses_http_persistence_and_storage(
         f"{root}/delivery-packages",
         headers={
             **headers(viewer, organization_id, workspace_id),
-            "Idempotency-Key": "rc-viewer-denied",
+            "Idempotency-Key": "rc-create-delivery",
         },
         json={
             "script_version_id": script_id,
@@ -229,7 +229,20 @@ def test_complete_rc_golden_path_uses_http_persistence_and_storage(
             "approval_review_id": review_id,
         },
     )
-    assert denied.status_code == 403
+    fresh_denied = rc_client.post(
+        f"{root}/delivery-packages",
+        headers={
+            **headers(viewer, organization_id, workspace_id),
+            "Idempotency-Key": "rc-viewer-fresh",
+        },
+        json={
+            "script_version_id": script_id,
+            "storyboard_version_id": storyboard_id,
+            "shot_plan_version_id": shot_plan_id,
+            "approval_review_id": review_id,
+        },
+    )
+    assert denied.status_code == fresh_denied.status_code == 403
 
     other_organization, other_workspace, _ = bootstrap(rc_client, "rc-other-tenant")
     cross_tenant = rc_client.get(

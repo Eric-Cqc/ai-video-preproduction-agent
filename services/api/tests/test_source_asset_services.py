@@ -21,6 +21,7 @@ from services.api.app.application.source_asset_services import (
 from services.api.app.domain import (
     AuditEvent,
     MembershipRole,
+    SourceAsset,
     SourceAssetOperation,
     SourceAssetOperationStatus,
     SourceAssetOperationType,
@@ -606,8 +607,18 @@ class FailingFinalizeRepository(SourceAssetOperationRepository):
         source_asset_version_id: UUID | None,
         completed_at: datetime,
         expected_version: int,
+        duplicate_count: int = 0,
+        result_asset: SourceAsset | None = None,
     ) -> SourceAssetOperation:
-        del operation, source_asset_id, source_asset_version_id, completed_at, expected_version
+        del (
+            operation,
+            source_asset_id,
+            source_asset_version_id,
+            completed_at,
+            expected_version,
+            duplicate_count,
+            result_asset,
+        )
         raise RuntimeError("finalize failure")
 
 

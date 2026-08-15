@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, text
 
 from services.api.app.config import ApiSettings
 from services.api.app.main import create_app
@@ -341,7 +342,9 @@ def test_version_ingestion_preserves_approved_predecessor_and_replays_after_adva
         f"{brief_path}/ingestions", headers=version_headers, json=version_payload
     )
     assert accepted.status_code == 201, accepted.text
-    successor = accepted.json()["result"]["current_version"]
+    accepted_body = accepted.json()
+    operation_brief = accepted_body["result"]["brief"]
+    successor = accepted_body["result"]["current_version"]
     assert successor["supersedes_version_id"] == original["id"]
     assert (
         ingestion_client.get(
@@ -371,3 +374,60 @@ def test_version_ingestion_preserves_approved_predecessor_and_replays_after_adva
     assert replay.status_code == 200
     assert replay.json()["replayed"] is True
     assert replay.json()["result"]["current_version"]["id"] == successor["id"]
+    assert replay.json()["result"]["brief"] == operation_brief
+
+
+def test_legacy_ingestion_replay_is_labeled_and_returns_a_consistent_current_bundle(
+    ingestion_client: TestClient, database_engine: Engine
+) -> None:
+    organization_id, workspace_id, project_id = bootstrap(ingestion_client, "legacy-ingestion")
+    tenant_headers = headers("actor:owner", organization_id, workspace_id)
+    path = _path(organization_id, workspace_id, project_id)
+    create_headers = {**tenant_headers, "Idempotency-Key": "legacy-ingestion-create"}
+    created = ingestion_client.post(path, headers=create_headers, json=_payload())
+    assert created.status_code == 201, created.text
+    created_body = created.json()
+    brief = created_body["result"]["brief"]
+    first_version = created_body["result"]["current_version"]
+
+    advance_payload = {
+        "operation": "create_version",
+        "expected_brief_version": brief["version"],
+        "expected_current_version_id": first_version["id"],
+        "source_version_id": first_version["id"],
+        "structured_content": fixture("valid-structured-brief-v1.json"),
+        "source_type": "imported_structured",
+        "source_reference": "external-record:legacy-advance",
+        "change_summary": "Advance the aggregate after the legacy operation",
+    }
+    advanced = ingestion_client.post(
+        f"{path.rsplit('/brief-ingestions', 1)[0]}/briefs/{brief['id']}/ingestions",
+        headers={**tenant_headers, "Idempotency-Key": "legacy-ingestion-advance"},
+        json=advance_payload,
+    )
+    assert advanced.status_code == 201, advanced.text
+    advanced_bundle = advanced.json()["result"]
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE brief_ingestions SET result_brief_status = NULL, "
+                "result_brief_latest_version_number = NULL, "
+                "result_brief_aggregate_version = NULL, result_brief_updated_at = NULL "
+                "WHERE id = :ingestion_id"
+            ),
+            {"ingestion_id": created_body["ingestion_id"]},
+        )
+
+    replay = ingestion_client.post(path, headers=create_headers, json=_payload())
+    assert replay.status_code == 200, replay.text
+    replay_body = replay.json()
+    replay_bundle = replay_body["result"]
+    assert replay_body["replayed"] is True
+    assert replay_body["result_snapshot_available"] is False
+    assert replay_bundle["brief"]["current_version_id"] == advanced_bundle["current_version"]["id"]
+    assert replay_bundle["current_version"]["id"] == advanced_bundle["current_version"]["id"]
+    assert (
+        replay_bundle["brief"]["latest_version_number"]
+        == replay_bundle["current_version"]["version_number"]
+    )

@@ -3,6 +3,7 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, text
 
 from services.api.app.config import ApiSettings
 from services.api.app.main import create_app
@@ -121,6 +122,15 @@ def test_source_asset_create_version_archive_and_replay_after_advance(
     created = _create(source_asset_client, organization_id, workspace_id, project_id)
     asset = created["source_asset"]
     version = created["current_version"]
+    _create(
+        source_asset_client,
+        organization_id,
+        workspace_id,
+        project_id,
+        key="source-version-duplicate-1",
+        byte_size=2048,
+        checksum_value="b" * 64,
+    )
     tenant_headers = headers("actor:owner", organization_id, workspace_id)
     version_headers = {**tenant_headers, "Idempotency-Key": "source-version-key"}
     path = _path(organization_id, workspace_id, project_id)
@@ -139,8 +149,36 @@ def test_source_asset_create_version_archive_and_replay_after_advance(
         f"{path}/{asset['id']}/versions", headers=version_headers, json=version_payload
     )
     assert versioned.status_code == 201, versioned.text
-    successor = versioned.json()["current_version"]
+    versioned_body = versioned.json()
+    operation_asset = versioned_body["source_asset"]
+    successor = versioned_body["current_version"]
     assert successor["supersedes_version_id"] == version["id"]
+    assert versioned.json()["duplicate_count"] == 1
+
+    next_payload = {
+        **version_payload,
+        "expected_source_asset_version": 2,
+        "expected_current_version_id": successor["id"],
+        "source_version_id": successor["id"],
+        "original_filename": "creative-source-v3.pdf",
+        "checksum_value": "c" * 64,
+    }
+    next_versioned = source_asset_client.post(
+        f"{path}/{asset['id']}/versions",
+        headers={**tenant_headers, "Idempotency-Key": "source-version-next-key"},
+        json=next_payload,
+    )
+    assert next_versioned.status_code == 201, next_versioned.text
+    current_successor = next_versioned.json()["current_version"]
+    _create(
+        source_asset_client,
+        organization_id,
+        workspace_id,
+        project_id,
+        key="source-version-duplicate-2",
+        byte_size=2048,
+        checksum_value="b" * 64,
+    )
 
     stale = source_asset_client.post(
         f"{path}/{asset['id']}/versions",
@@ -154,9 +192,11 @@ def test_source_asset_create_version_archive_and_replay_after_advance(
     )
     assert replay.status_code == 200
     assert replay.json()["current_version"]["id"] == successor["id"]
+    assert replay.json()["source_asset"] == operation_asset
+    assert replay.json()["duplicate_count"] == 1
 
     versions = source_asset_client.get(f"{path}/{asset['id']}/versions", headers=tenant_headers)
-    assert [item["version_number"] for item in versions.json()["items"]] == [1, 2]
+    assert [item["version_number"] for item in versions.json()["items"]] == [1, 2, 3]
     assert (
         source_asset_client.get(
             f"{path}/{asset['id']}/versions/{successor['id']}", headers=tenant_headers
@@ -168,8 +208,8 @@ def test_source_asset_create_version_archive_and_replay_after_advance(
         f"{path}/{asset['id']}/archive",
         headers={**tenant_headers, "Idempotency-Key": "archive-source-key"},
         json={
-            "expected_source_asset_version": 2,
-            "expected_current_version_id": successor["id"],
+            "expected_source_asset_version": 3,
+            "expected_current_version_id": current_successor["id"],
         },
     )
     assert archive.status_code == 200
@@ -180,12 +220,80 @@ def test_source_asset_create_version_archive_and_replay_after_advance(
         headers={**tenant_headers, "Idempotency-Key": "archived-source-version"},
         json={
             **version_payload,
-            "expected_source_asset_version": 3,
-            "expected_current_version_id": successor["id"],
-            "source_version_id": successor["id"],
+            "expected_source_asset_version": 4,
+            "expected_current_version_id": current_successor["id"],
+            "source_version_id": current_successor["id"],
         },
     )
     assert archived_version.status_code == 409
+
+
+def test_legacy_source_asset_replay_is_labeled_without_fabricating_duplicate_count(
+    source_asset_client: TestClient, database_engine: Engine
+) -> None:
+    organization_id, workspace_id, project_id = bootstrap(source_asset_client, "legacy-source")
+    path = _path(organization_id, workspace_id, project_id)
+    created = _create(
+        source_asset_client,
+        organization_id,
+        workspace_id,
+        project_id,
+        key="legacy-source-create",
+    )
+    asset = created["source_asset"]
+    version = created["current_version"]
+    advanced = source_asset_client.post(
+        f"{path}/{asset['id']}/versions",
+        headers={
+            **headers("actor:owner", organization_id, workspace_id),
+            "Idempotency-Key": "legacy-source-advance",
+        },
+        json={
+            "expected_source_asset_version": asset["version"],
+            "expected_current_version_id": asset["current_version_id"],
+            "source_version_id": version["id"],
+            **_version_metadata(
+                original_filename="legacy-source-v2.pdf",
+                checksum_value="b" * 64,
+            ),
+        },
+    )
+    assert advanced.status_code == 201, advanced.text
+    advanced_body = advanced.json()
+
+    with database_engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE source_asset_operations SET result_asset_status = NULL, "
+                "result_asset_latest_version_number = NULL, "
+                "result_asset_aggregate_version = NULL, result_asset_updated_at = NULL "
+                "WHERE id = :operation_id"
+            ),
+            {"operation_id": created["operation"]["operation_id"]},
+        )
+
+    replay = source_asset_client.post(
+        path,
+        headers={
+            **headers("actor:owner", organization_id, workspace_id),
+            "Idempotency-Key": "legacy-source-create",
+        },
+        json=_payload(),
+    )
+    assert replay.status_code == 200, replay.text
+    replay_body = replay.json()
+    assert replay_body["replayed"] is True
+    assert replay_body["result_snapshot_available"] is False
+    assert replay_body["duplicate_count"] is None
+    assert replay_body["duplicate_content_detected"] is None
+    assert (
+        replay_body["source_asset"]["current_version_id"] == advanced_body["current_version"]["id"]
+    )
+    assert replay_body["current_version"]["id"] == advanced_body["current_version"]["id"]
+    assert (
+        replay_body["source_asset"]["latest_version_number"]
+        == replay_body["current_version"]["version_number"]
+    )
 
 
 def test_source_asset_roles_opaque_cross_tenant_and_invalid_payloads(

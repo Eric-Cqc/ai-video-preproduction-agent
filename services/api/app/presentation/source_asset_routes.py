@@ -80,11 +80,15 @@ def _mutation(result: SourceAssetResult) -> SourceAssetMutationResponse:
     completed_at = result.operation.completed_at
     if completed_at is None:
         raise RuntimeError("accepted source asset operation has no completion time")
+    duplicate_content_detected = (
+        None if result.duplicate_count is None else result.duplicate_count > 0
+    )
     return SourceAssetMutationResponse(
         source_asset=_asset(result.asset),
         current_version=_version(result.version),
         replayed=result.replayed,
-        duplicate_content_detected=result.duplicate_count > 0,
+        result_snapshot_available=result.result_snapshot_available,
+        duplicate_content_detected=duplicate_content_detected,
         duplicate_count=result.duplicate_count,
         operation=SourceAssetOperationOutcomeResponse(
             operation_id=result.operation.id,

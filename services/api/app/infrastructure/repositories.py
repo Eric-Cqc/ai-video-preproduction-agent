@@ -16,6 +16,9 @@ from services.api.app.domain import (
     BriefCandidateReviewStatus,
     BriefExtractionAttempt,
     BriefExtractionAttemptStatus,
+    BriefExtractionOperation,
+    BriefExtractionOperationStatus,
+    BriefExtractionOperationType,
     BriefExtractionRun,
     BriefExtractionRunStatus,
     BriefIngestion,
@@ -64,6 +67,7 @@ from services.api.app.infrastructure.models import (
     AuditEventRecord,
     BriefCandidateReviewRecord,
     BriefExtractionAttemptRecord,
+    BriefExtractionOperationRecord,
     BriefExtractionRunRecord,
     BriefIngestionRecord,
     BriefIngestionSourceAssetRecord,
@@ -391,6 +395,12 @@ class SqlAlchemyBriefIngestionRepository:
             "completed_at": ingestion.completed_at,
             "correlation_id": ingestion.correlation_id,
             "version": ingestion.version,
+            "result_brief_status": ingestion.result_brief_status.value
+            if ingestion.result_brief_status is not None
+            else None,
+            "result_brief_latest_version_number": ingestion.result_brief_latest_version_number,
+            "result_brief_aggregate_version": ingestion.result_brief_aggregate_version,
+            "result_brief_updated_at": ingestion.result_brief_updated_at,
         }
         record = self.session.scalar(
             insert(BriefIngestionRecord)
@@ -408,7 +418,24 @@ class SqlAlchemyBriefIngestionRepository:
         brief_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
+        result_brief: Brief | None = None,
     ) -> BriefIngestion:
+        values: dict[str, object] = {
+            "status": BriefIngestionStatus.ACCEPTED.value,
+            "brief_id": brief_id,
+            "brief_version_id": brief_version_id,
+            "completed_at": completed_at,
+            "version": expected_version + 1,
+        }
+        if result_brief is not None:
+            values.update(
+                {
+                    "result_brief_status": result_brief.status.value,
+                    "result_brief_latest_version_number": result_brief.latest_version_number,
+                    "result_brief_aggregate_version": result_brief.version,
+                    "result_brief_updated_at": result_brief.updated_at,
+                }
+            )
         record = self.session.scalar(
             update(BriefIngestionRecord)
             .where(
@@ -422,13 +449,7 @@ class SqlAlchemyBriefIngestionRepository:
                 BriefIngestionRecord.payload_digest == ingestion.payload_digest,
                 BriefIngestionRecord.version == expected_version,
             )
-            .values(
-                status=BriefIngestionStatus.ACCEPTED.value,
-                brief_id=brief_id,
-                brief_version_id=brief_version_id,
-                completed_at=completed_at,
-                version=expected_version + 1,
-            )
+            .values(**values)
             .returning(BriefIngestionRecord)
         )
         if record is None:
@@ -914,6 +935,13 @@ class SqlAlchemySourceAssetOperationRepository:
                 completed_at=operation.completed_at,
                 correlation_id=operation.correlation_id,
                 version=operation.version,
+                duplicate_count=operation.duplicate_count,
+                result_asset_status=operation.result_asset_status.value
+                if operation.result_asset_status is not None
+                else None,
+                result_asset_latest_version_number=operation.result_asset_latest_version_number,
+                result_asset_aggregate_version=operation.result_asset_aggregate_version,
+                result_asset_updated_at=operation.result_asset_updated_at,
             )
             .on_conflict_do_nothing(constraint="uq_source_asset_operations_idempotency")
             .returning(SourceAssetOperationRecord)
@@ -947,7 +975,26 @@ class SqlAlchemySourceAssetOperationRepository:
         source_asset_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
+        duplicate_count: int = 0,
+        result_asset: SourceAsset | None = None,
     ) -> SourceAssetOperation:
+        values: dict[str, object] = {
+            "status": SourceAssetOperationStatus.ACCEPTED.value,
+            "source_asset_id": source_asset_id,
+            "source_asset_version_id": source_asset_version_id,
+            "completed_at": completed_at,
+            "version": expected_version + 1,
+            "duplicate_count": duplicate_count,
+        }
+        if result_asset is not None:
+            values.update(
+                {
+                    "result_asset_status": result_asset.status.value,
+                    "result_asset_latest_version_number": result_asset.latest_version_number,
+                    "result_asset_aggregate_version": result_asset.version,
+                    "result_asset_updated_at": result_asset.updated_at,
+                }
+            )
         record = self.session.scalar(
             update(SourceAssetOperationRecord)
             .where(
@@ -961,13 +1008,7 @@ class SqlAlchemySourceAssetOperationRepository:
                 SourceAssetOperationRecord.request_digest == operation.request_digest,
                 SourceAssetOperationRecord.version == expected_version,
             )
-            .values(
-                status=SourceAssetOperationStatus.ACCEPTED.value,
-                source_asset_id=source_asset_id,
-                source_asset_version_id=source_asset_version_id,
-                completed_at=completed_at,
-                version=expected_version + 1,
-            )
+            .values(**values)
             .returning(SourceAssetOperationRecord)
         )
         if record is None:
@@ -1403,6 +1444,98 @@ class SqlAlchemyRequirementIssueRepository:
         )
 
 
+class SqlAlchemyBriefExtractionOperationRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def reserve(self, operation: BriefExtractionOperation) -> BriefExtractionOperation | None:
+        if operation.status is not BriefExtractionOperationStatus.RESERVED:
+            raise ValueError("only reserved brief extraction operations may be inserted")
+        record = self.session.scalar(
+            insert(BriefExtractionOperationRecord)
+            .values(
+                id=operation.id,
+                organization_id=operation.organization_id,
+                workspace_id=operation.workspace_id,
+                project_id=operation.project_id,
+                source_asset_id=operation.source_asset_id,
+                source_asset_version_id=operation.source_asset_version_id,
+                document_extraction_id=operation.document_extraction_id,
+                operation=operation.operation.value,
+                run_id=None,
+                idempotency_key=operation.idempotency_key,
+                request_digest=operation.request_digest,
+                status=operation.status.value,
+                submitted_by_actor_subject=operation.submitted_by_actor_subject,
+                submitted_at=operation.submitted_at,
+                completed_at=None,
+                correlation_id=operation.correlation_id,
+                version=operation.version,
+            )
+            .on_conflict_do_nothing(constraint="uq_brief_extraction_operation_key")
+            .returning(BriefExtractionOperationRecord)
+        )
+        return _brief_extraction_operation(record) if record is not None else None
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: BriefExtractionOperationType,
+        idempotency_key: str,
+    ) -> BriefExtractionOperation | None:
+        record = self.session.scalar(
+            select(BriefExtractionOperationRecord).where(
+                BriefExtractionOperationRecord.organization_id == organization_id,
+                BriefExtractionOperationRecord.workspace_id == workspace_id,
+                BriefExtractionOperationRecord.project_id == project_id,
+                BriefExtractionOperationRecord.operation == operation.value,
+                BriefExtractionOperationRecord.idempotency_key == idempotency_key,
+            )
+        )
+        return _brief_extraction_operation(record) if record is not None else None
+
+    def finalize_accepted(
+        self,
+        operation: BriefExtractionOperation,
+        *,
+        run_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> BriefExtractionOperation:
+        record = self.session.scalar(
+            update(BriefExtractionOperationRecord)
+            .where(
+                BriefExtractionOperationRecord.organization_id == operation.organization_id,
+                BriefExtractionOperationRecord.workspace_id == operation.workspace_id,
+                BriefExtractionOperationRecord.project_id == operation.project_id,
+                BriefExtractionOperationRecord.id == operation.id,
+                BriefExtractionOperationRecord.source_asset_id == operation.source_asset_id,
+                BriefExtractionOperationRecord.source_asset_version_id
+                == operation.source_asset_version_id,
+                BriefExtractionOperationRecord.document_extraction_id
+                == operation.document_extraction_id,
+                BriefExtractionOperationRecord.operation == operation.operation.value,
+                BriefExtractionOperationRecord.idempotency_key == operation.idempotency_key,
+                BriefExtractionOperationRecord.request_digest == operation.request_digest,
+                BriefExtractionOperationRecord.status
+                == BriefExtractionOperationStatus.RESERVED.value,
+                BriefExtractionOperationRecord.version == expected_version,
+            )
+            .values(
+                status=BriefExtractionOperationStatus.ACCEPTED.value,
+                run_id=run_id,
+                completed_at=completed_at,
+                version=expected_version + 1,
+            )
+            .returning(BriefExtractionOperationRecord)
+        )
+        if record is None:
+            raise ResourceConflict("brief extraction operation changed before acceptance")
+        return _brief_extraction_operation(record)
+
+
 class SqlAlchemyBriefExtractionRunRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -1750,6 +1883,12 @@ def _brief_ingestion(record: BriefIngestionRecord) -> BriefIngestion:
         completed_at=record.completed_at,
         correlation_id=record.correlation_id,
         version=record.version,
+        result_brief_status=BriefStatus(record.result_brief_status)
+        if record.result_brief_status is not None
+        else None,
+        result_brief_latest_version_number=record.result_brief_latest_version_number,
+        result_brief_aggregate_version=record.result_brief_aggregate_version,
+        result_brief_updated_at=record.result_brief_updated_at,
     )
 
 
@@ -1852,6 +1991,13 @@ def _source_asset_operation(record: SourceAssetOperationRecord) -> SourceAssetOp
         completed_at=record.completed_at,
         correlation_id=record.correlation_id,
         version=record.version,
+        duplicate_count=record.duplicate_count,
+        result_asset_status=SourceAssetStatus(record.result_asset_status)
+        if record.result_asset_status is not None
+        else None,
+        result_asset_latest_version_number=record.result_asset_latest_version_number,
+        result_asset_aggregate_version=record.result_asset_aggregate_version,
+        result_asset_updated_at=record.result_asset_updated_at,
     )
 
 
@@ -1936,6 +2082,30 @@ def _document_extraction_operation(
         idempotency_key=record.idempotency_key,
         request_digest=record.request_digest,
         status=DocumentExtractionOperationStatus(record.status),
+        submitted_by_actor_subject=record.submitted_by_actor_subject,
+        submitted_at=record.submitted_at,
+        completed_at=record.completed_at,
+        correlation_id=record.correlation_id,
+        version=record.version,
+    )
+
+
+def _brief_extraction_operation(
+    record: BriefExtractionOperationRecord,
+) -> BriefExtractionOperation:
+    return BriefExtractionOperation(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        source_asset_id=record.source_asset_id,
+        source_asset_version_id=record.source_asset_version_id,
+        document_extraction_id=record.document_extraction_id,
+        operation=BriefExtractionOperationType(record.operation),
+        run_id=record.run_id,
+        idempotency_key=record.idempotency_key,
+        request_digest=record.request_digest,
+        status=BriefExtractionOperationStatus(record.status),
         submitted_by_actor_subject=record.submitted_by_actor_subject,
         submitted_at=record.submitted_at,
         completed_at=record.completed_at,

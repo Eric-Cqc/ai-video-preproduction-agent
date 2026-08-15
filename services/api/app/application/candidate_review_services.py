@@ -251,7 +251,7 @@ class BriefCandidateReviewService:
                     )
                 )
                 return CandidateReviewResult(saved, False)
-            saved_brief, saved_version = self._accept_content(
+            saved_brief, saved_version, detected_issues = self._accept_content(
                 uow,
                 context,
                 project_id,
@@ -286,6 +286,22 @@ class BriefCandidateReviewService:
                     },
                 )
             )
+            uow.audit_events.append(
+                self._brief_audit(
+                    context,
+                    saved_brief.id,
+                    "brief.created"
+                    if saved_version.version_number == 1 and saved_brief.version == 1
+                    else "brief.version_created",
+                    {
+                        "brief_version": saved_version.version_number,
+                        "brief_version_id": str(saved_version.id),
+                        "content_schema_version": saved_version.content_schema_version,
+                        "detected_issue_count": detected_issues,
+                        "version": saved_brief.version,
+                    },
+                )
+            )
             return CandidateReviewResult(saved, False)
 
     def _accept_content(
@@ -299,7 +315,7 @@ class BriefCandidateReviewService:
         content: dict[str, object],
         title: str | None,
         now: datetime,
-    ) -> tuple[Brief, BriefVersion]:
+    ) -> tuple[Brief, BriefVersion, int]:
         if brief_id is None:
             if uow.briefs.list(context.organization_id, context.workspace_id, project_id):
                 raise InvalidRequest("brief_id is required when the project already has a Brief")
@@ -367,8 +383,8 @@ class BriefCandidateReviewService:
                 now=now,
             )
             saved_version = uow.brief_versions.add(version)
-        self._briefs._add_detected_issues(uow, context, saved_version, now)
-        return saved_brief, saved_version
+        detected_issues = len(self._briefs._add_detected_issues(uow, context, saved_version, now))
+        return saved_brief, saved_version, detected_issues
 
     def _audit(
         self, context: TenantContext, run_id: UUID, action: str, payload: dict[str, object]
@@ -380,6 +396,27 @@ class BriefCandidateReviewService:
             context.actor_subject,
             "brief_extraction_run",
             run_id,
+            action,
+            payload,
+            self.clock(),
+            context.correlation_id,
+            None,
+        )
+
+    def _brief_audit(
+        self,
+        context: TenantContext,
+        brief_id: UUID,
+        action: str,
+        payload: dict[str, object],
+    ) -> AuditEvent:
+        return AuditEvent(
+            self.id_factory(),
+            context.organization_id,
+            context.workspace_id,
+            context.actor_subject,
+            "brief",
+            brief_id,
             action,
             payload,
             self.clock(),

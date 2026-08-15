@@ -1,5 +1,7 @@
 import hashlib
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from sqlalchemy import Engine, text
@@ -7,6 +9,7 @@ from sqlalchemy import Engine, text
 from services.api.app.application.errors import ApplicationError, ResourceConflict, ResourceNotFound
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
+    RevisionResult,
 )
 from services.api.app.application.storage import LocalFilesystemStorageAdapter, StorageError
 from services.api.app.application.visual_planning_services import (
@@ -66,6 +69,79 @@ class _FailingFinalizeStorage(LocalFilesystemStorageAdapter):
     def finalize(self, staging_key: str, final_key: str) -> None:
         del staging_key, final_key
         raise StorageError("injected finalize failure")
+
+
+class _StaleRevisionRepository:
+    def __init__(
+        self, delegate: object, stale: object, after_first_read: Callable[[], None]
+    ) -> None:
+        self._delegate = delegate
+        self._stale = stale
+        self._after_first_read = after_first_read
+        self._get_calls = 0
+
+    def get(self, *args: object, **kwargs: object) -> object:
+        self._get_calls += 1
+        if self._get_calls == 1:
+            primed = self._delegate.get(*args, **kwargs)  # type: ignore[attr-defined]
+            if primed is None:
+                raise AssertionError("expected the stale request to be present")
+            self._after_first_read()
+            return self._stale
+        return self._delegate.get(*args, **kwargs)  # type: ignore[attr-defined]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+
+class _ReservationLossDeliveryOperations:
+    def __init__(self, delegate: object) -> None:
+        self._delegate = delegate
+        self._get_calls = 0
+
+    def get_by_key(self, *args: object, **kwargs: object) -> object:
+        self._get_calls += 1
+        if self._get_calls == 1:
+            return None
+        return self._delegate.get_by_key(*args, **kwargs)  # type: ignore[attr-defined]
+
+    @staticmethod
+    def reserve(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+
+class _ReservationLossUoW:
+    def __init__(
+        self,
+        session_factory: SessionFactory,
+        stale_request: object,
+        after_first_read: Callable[[], None],
+    ) -> None:
+        self._delegate = SqlAlchemyUnitOfWork(session_factory)
+        self._stale_request = stale_request
+        self._after_first_read = after_first_read
+
+    def __enter__(self) -> "_ReservationLossUoW":
+        self._delegate.__enter__()
+        self.planning_revision_requests = _StaleRevisionRepository(
+            self._delegate.planning_revision_requests,
+            self._stale_request,
+            self._after_first_read,
+        )
+        self.delivery_operations = _ReservationLossDeliveryOperations(
+            self._delegate.delivery_operations
+        )
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self._delegate.__exit__(exc_type, exc_value, traceback)  # type: ignore[arg-type]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
 
 
 def test_review_revision_successor_keeps_predecessor_immutable(
@@ -147,6 +223,65 @@ def test_review_revision_successor_keeps_predecessor_immutable(
             == 1
         )
     assert dict(after) == dict(before)
+
+
+def test_completion_reservation_loser_reads_winner_state_before_returning(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    del clean_database
+    seed, graph, _storyboard, _shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "completion-loser", tmp_path
+    )
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.SCRIPT,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=None,
+        shot_plan_version_id=None,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Complete once.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="completion-review-loser",
+    ).revision_request
+    assert request is not None
+    stale_request = delivery.get_revision_request(seed.context, seed.project_id, request.id)
+    winner_results: list[RevisionResult] = []
+
+    def commit_winner() -> None:
+        winner_results.append(
+            delivery.complete_revision(
+                seed.context,
+                seed.project_id,
+                request.id,
+                provider_mode="valid",
+                idempotency_key="completion-loser-key",
+            )
+        )
+
+    loser = ReviewRevisionDeliveryApplicationService(
+        cast(
+            Any,
+            lambda: _ReservationLossUoW(persistence_session_factory, stale_request, commit_winner),
+        ),
+        delivery.storage,
+    ).complete_revision(
+        seed.context,
+        seed.project_id,
+        request.id,
+        provider_mode="valid",
+        idempotency_key="completion-loser-key",
+    )
+
+    assert loser.replayed is True
+    assert len(winner_results) == 1
+    winner = winner_results[0]
+    assert loser.request.status.value == "completed"
+    assert loser.request.version == winner.request.version
+    assert loser.successor_script_version_id == winner.successor_script_version_id
 
 
 def test_approved_bundle_delivery_and_deterministic_export(

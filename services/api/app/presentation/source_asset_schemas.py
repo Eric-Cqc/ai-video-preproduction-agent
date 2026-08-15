@@ -92,8 +92,9 @@ class SourceAssetMutationResponse(BaseModel):
     source_asset: SourceAssetResponse
     current_version: SourceAssetVersionResponse
     replayed: bool
-    duplicate_content_detected: bool
-    duplicate_count: int
+    result_snapshot_available: bool
+    duplicate_content_detected: bool | None
+    duplicate_count: int | None
     operation: SourceAssetOperationOutcomeResponse
 
 

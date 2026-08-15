@@ -1,10 +1,10 @@
 # AI Video Preproduction Agent
 
-This repository contains a local release candidate for an **AI video preproduction system**. It provides a real interactive, tenant-aware Golden Path from canonical source upload through deterministic offline planning, human approval, immutable delivery package, and verified ZIP download. It makes no real model call and does not perform OCR, fetch external URLs, render, publish, or deliver video.
+This repository contains a local release candidate for an **AI video preproduction system**. It provides a real interactive, tenant-aware Golden Path from canonical source upload through deterministic offline planning, explicit human gates, immutable delivery package, and verified ZIP download. The Local RC makes no real model call and does not perform OCR, fetch external URLs, render, publish, or deliver video.
 
 ## Current capabilities
 
-- Next.js Production Desk with a tenant-aware interactive Golden Path and canonical cross-language health contract.
+- Next.js stage-aware Production Desk with readable planning artifacts, visible lineage, and explicit human actions at each decision boundary, plus the canonical cross-language health contract.
 - FastAPI health plus Organization, Workspace, Membership, Project and versioned Brief foundation endpoints.
 - PostgreSQL 17 schema managed by Alembic, with composite tenant constraints and partial membership indexes.
 - Tenant-scoped repositories, one application Unit of Work, atomic mutation/audit writes, and Project optimistic concurrency.
@@ -18,16 +18,18 @@ This repository contains a local release candidate for an **AI video preproducti
 - Offline Creative Concept generation produces exactly three immutable, schema-validated candidates pinned to one BriefVersion; a separate human selection is required before one immutable draft ScriptVersion can be generated.
 - Ordered immutable SourceAssetVersion references on accepted Brief ingestion; the order and relation type are part of the canonical ingestion digest.
 - Temporary local/test/ci request-context headers, explicitly not authentication.
-- Python Worker one-shot readiness boundary and minimal Provider registry with no real Provider.
+- Python Worker one-shot self-check boundary and minimal Provider registry with no real default Provider call.
 - Deterministic domain, PostgreSQL, isolation, transaction, API, contract, and component tests.
 - Tenant-scoped human review, immutable revision successors, and deterministic JSON/CSV/ZIP delivery exports pinned to an approved planning bundle.
 
 There is no cloud object storage, MIME sniffing, PDF/DOCX/XLSX rich parsing, OCR, URL retrieval,
 Provider SDK, automatic candidate acceptance or selection, media generation, authentication
-Provider, production queue, billing, cloud deployment, or customer collaboration feature. Candidate
-acceptance and concept selection are always explicit authorized human actions. ADR-064 permits one
-opt-in, server-side DeepSeek `deepseek-v4-flash` pilot adapter; deterministic offline providers
-remain the default for the Local RC, CI and tests.
+Provider, production queue, billing, or customer collaboration feature. Local RC/test/CI objects
+use the local filesystem; the private hosted pilot uses a Compose volume, not cloud object storage.
+Candidate acceptance and concept selection are explicit authorized human actions in the Production
+Desk. ADR-064 and ADR-066 authorize only the opt-in, server-side DeepSeek `deepseek-v4-flash`
+single-tenant pilot boundary; deterministic offline providers remain the default for the Local RC,
+CI and tests.
 
 ## Interactive Golden Path and local RC
 
@@ -43,16 +45,19 @@ Use the supported local release-candidate commands:
 ```sh
 make rc-up
 make rc-seed
+make rc-golden-path-test
 make rc-smoke
 make rc-check
 make rc-down
 make demo-smoke
 ```
 
-`rc-seed` creates only the minimum repeatable local Organization/Workspace context. `rc-smoke`
-uses real routes, services, repositories, Unit of Work, PostgreSQL, local storage and deterministic
-offline providers; it verifies replay/conflict behavior, exact approved lineage, permissions,
-server-generated ZIP contents and checksum. See
+`rc-seed` creates only the minimum repeatable local Organization/Workspace context.
+`rc-golden-path-test` is the preserved in-process API suite. `rc-smoke` is the socket-level verifier
+for a running API and Web; it uses real routes, services, repositories, Unit of Work, PostgreSQL,
+local storage and deterministic offline providers, and verifies replay/conflict behavior, exact
+approved lineage, permissions, tenant isolation, server-generated ZIP contents and checksum.
+`rc-check` repeats the socket smoke on isolated ports and the test database. See
 [LOCAL_QUICKSTART.md](docs/release/LOCAL_QUICKSTART.md).
 
 ## Offline Brief extraction safety foundation
@@ -149,7 +154,9 @@ make db-upgrade
 make db-status
 ```
 
-For native PostgreSQL, create separate `foundation_local` and `foundation_test` databases, set `DATABASE_URL` and `TEST_DATABASE_URL`, then run `make db-upgrade`. Both URLs must use `postgresql+psycopg`; there is no SQLite fallback.
+For native PostgreSQL, create separate `foundation_local` and `foundation_test` databases, set
+`DATABASE_URL` and `TEST_DATABASE_URL`, then run `make db-upgrade` and `make db-upgrade-test`.
+Both URLs must use `postgresql+psycopg`; there is no SQLite fallback.
 
 ## Database commands
 
@@ -157,7 +164,9 @@ For native PostgreSQL, create separate `foundation_local` and `foundation_test` 
 make db-up          # optional Docker PostgreSQL only
 make db-down        # stops this Compose project; preserves its named volume
 make db-upgrade
+make db-upgrade-test
 make db-current
+make db-current-test
 make db-check
 make db-downgrade   # explicit one-revision downgrade
 make db-reset-test  # truncates only a database whose name ends in _test
@@ -231,12 +240,16 @@ make typecheck
 make test-domain
 make test-persistence
 make test-integration
+make test-web
 make contract-check
 make build
 make check
 ```
 
-`make check` requires a migrated PostgreSQL database selected by `DATABASE_URL`; persistence tests use `TEST_DATABASE_URL`. It runs migration head/drift validation, formatting, lint, strict types, all tests, contract validation, and the production Web build. JavaScript commands are routed through `scripts/run-with-node.sh`.
+`make check` validates the application database head/drift, upgrades the test database before the
+full test target, then runs formatting, lint, strict types, all tests, contract validation, and the
+production Web build. Persistence tests use `TEST_DATABASE_URL`; `make test-web` runs the Web test
+script directly. JavaScript commands are routed through `scripts/run-with-node.sh`.
 
 Use `make` as the public developer entry point; do not run bare `node`, `npm`, or `npx`. A direct `npm run ...` cannot change the Node binary already used by that parent process and is unsupported.
 
@@ -269,7 +282,12 @@ The checked-in values are local test credentials only. Production requires an ex
 
 The authoritative constraints are [FOUNDATION.md](FOUNDATION.md), [AGENTS.md](AGENTS.md), the [architecture documents](docs/architecture/), and [ADRs](docs/adr/). ADR-012 through ADR-031 record persistence, Brief/ingestion and SourceAsset foundations; ADR-032 through ADR-035 record binary storage; ADR-036 through ADR-039 record deterministic parsing; ADR-040 through ADR-043 record the offline model/candidate boundary. Execution records include [binary-upload-storage-plan.md](docs/development/plans/binary-upload-storage-plan.md), [deterministic-document-parsing-plan.md](docs/development/plans/deterministic-document-parsing-plan.md), and [offline-ai-brief-extraction-plan.md](docs/development/plans/offline-ai-brief-extraction-plan.md).
 
-Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop decisions are recorded by ADR-048 through ADR-052. A real Provider evaluation still requires a new privacy, threat, cost and retention ADR first.
+Stage 10 candidate review decisions are recorded by ADR-044 through ADR-047; Stage 11 creative-loop
+decisions are recorded by ADR-048 through ADR-052. [ADR-064](docs/adr/ADR-064-deepseek-hosted-pilot-provider.md)
+and [ADR-066](docs/adr/ADR-066-single-tenant-hosted-mvp-boundary.md) authorize the bounded,
+server-side DeepSeek hosted-pilot boundary. Hosted acceptance still requires the ADR-064 privacy,
+retention, cost, and availability review plus external live-chain validation; those are not claims
+of completion and do not require creating ADR-065.
 
 The following describes the historical Stage 12 boundary, not the current product state. Stage 12 Storyboard/Shot Plan decisions are recorded by ADR-053 through ADR-057.
 The workflow stores immutable structured planning artifacts pinned to complete

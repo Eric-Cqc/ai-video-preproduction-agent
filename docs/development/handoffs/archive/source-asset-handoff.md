@@ -18,7 +18,7 @@ This file is for handing the repository to a new ChatGPT/Codex account. It recor
 ## Repository identity
 
 - Repository name: `ai-video-preproduction-agent`
-- Local path: `/Users/caiqichong/Developer/ai-video-preproduction-agent`
+- Local path: `<local-checkout-path>/ai-video-preproduction-agent`
 - Current branch: `feat/review-revision-delivery`
 - Current Alembic migration head: `a1b2c3d4e5f6`
 - Current head migration file: `infra/migrations/versions/a1b2c3d4e5f6_create_review_revision_delivery.py`
@@ -389,7 +389,7 @@ Minimum required reading:
 ## Startup prompt for the new ChatGPT/Codex account
 
 ```text
-You are taking over the repository at /Users/caiqichong/Developer/ai-video-preproduction-agent on branch feat/source-asset-intake.
+You are taking over the repository at <local-checkout-path>/ai-video-preproduction-agent on branch feat/source-asset-intake.
 
 First, do not implement anything yet. Read docs/development/handoffs/current-handoff.md completely, then inspect the repository state yourself with git status --short, git branch --show-current, git log -8 --oneline --decorate, and UV_CACHE_DIR=.cache/uv uv run --frozen --offline alembic heads.
 

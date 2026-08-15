@@ -11,6 +11,7 @@ from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.services import TenantApplicationService
 from services.api.app.domain import (
+    Brief,
     BriefIngestion,
     BriefIngestionSourceType,
     BriefSourceType,
@@ -37,8 +38,9 @@ class FailingFinalizeRepository(SqlAlchemyBriefIngestionRepository):
         brief_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
+        result_brief: Brief | None = None,
     ) -> BriefIngestion:
-        del ingestion, brief_id, brief_version_id, completed_at, expected_version
+        del ingestion, brief_id, brief_version_id, completed_at, expected_version, result_brief
         raise RuntimeError("simulated finalize failure")
 
 

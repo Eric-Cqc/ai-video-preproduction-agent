@@ -9,7 +9,8 @@ describe("deterministic local demo workflow", () => {
   it("has the complete approved-predecessor production sequence", () => {
     expect(deterministicDemoWorkflow.map((artifact) => artifact.stage)).toEqual(
       [
-        "Intake",
+        "Upload",
+        "Parse",
         "Brief",
         "Concepts",
         "Script",

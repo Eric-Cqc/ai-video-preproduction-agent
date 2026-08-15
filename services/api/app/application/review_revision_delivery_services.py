@@ -34,7 +34,7 @@ from services.api.app.application.services import (
     IdFactory,
     utc_now,
 )
-from services.api.app.application.storage import StorageError, StoragePort
+from services.api.app.application.storage import StorageError, StoragePort, preflight_read
 from services.api.app.application.uow import UnitOfWork
 from services.api.app.domain import (
     ArtifactRevisionLink,
@@ -120,6 +120,12 @@ class RevisionResult:
     successor_script_version_id: UUID | None
     successor_storyboard_version_id: UUID | None
     successor_shot_plan_version_id: UUID | None
+    replayed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionCancellationResult:
+    request: PlanningRevisionRequest
     replayed: bool
 
 
@@ -221,6 +227,7 @@ class ReviewRevisionDeliveryApplicationService:
             shot_plan_version_id,
         )
         with self.uow_factory() as uow:
+            self._require_mutation(uow, context, project_id)
             artifacts = self._load_review_artifacts(
                 uow,
                 context,
@@ -265,7 +272,6 @@ class ReviewRevisionDeliveryApplicationService:
                     else None
                 )
                 return ReviewResult(review, replay_revision, True)
-            self._require_mutation(uow, context, project_id)
             round_number = uow.planning_reviews.next_round(
                 context.organization_id,
                 context.workspace_id,
@@ -400,6 +406,7 @@ class ReviewRevisionDeliveryApplicationService:
         idempotency_key: str,
     ) -> RevisionResult:
         with self.uow_factory() as uow:
+            self._require_mutation(uow, context, project_id)
             request = self._require_revision(uow, context, project_id, request_id)
             mode_set = _mode_set(request.artifact_type)
             if provider_mode not in mode_set:
@@ -421,14 +428,7 @@ class ReviewRevisionDeliveryApplicationService:
                 digest,
             )
             if existing is not None:
-                return RevisionResult(
-                    request,
-                    request.successor_script_version_id,
-                    request.successor_storyboard_version_id,
-                    request.successor_shot_plan_version_id,
-                    True,
-                )
-            self._require_mutation(uow, context, project_id)
+                return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
             if request.status is not RevisionRequestStatus.OPEN:
                 raise ResourceConflict("revision request is not open")
             review = self._require_review(uow, context, project_id, request.review_id)
@@ -453,13 +453,7 @@ class ReviewRevisionDeliveryApplicationService:
                 )
                 if existing is None:
                     raise ResourceConflict("revision reservation could not be resolved")
-                return RevisionResult(
-                    request,
-                    request.successor_script_version_id,
-                    request.successor_storyboard_version_id,
-                    request.successor_shot_plan_version_id,
-                    True,
-                )
+                return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
             successors = self._create_successors(uow, context, project_id, request, provider_mode)
             now = self.clock()
             completed = replace(
@@ -498,8 +492,9 @@ class ReviewRevisionDeliveryApplicationService:
 
     def cancel_revision(
         self, context: TenantContext, project_id: UUID, request_id: UUID, *, idempotency_key: str
-    ) -> PlanningRevisionRequest:
+    ) -> RevisionCancellationResult:
         with self.uow_factory() as uow:
+            self._require_mutation(uow, context, project_id)
             request = self._require_revision(uow, context, project_id, request_id)
             digest = _digest(
                 {
@@ -512,25 +507,36 @@ class ReviewRevisionDeliveryApplicationService:
                 uow,
                 context,
                 project_id,
-                DeliveryOperationType.CREATE_REVISION_REQUEST,
+                DeliveryOperationType.CANCEL_REVISION_REQUEST,
                 idempotency_key,
                 digest,
             )
             if existing is not None:
-                return self._require_revision(uow, context, project_id, request_id)
-            self._require_mutation(uow, context, project_id)
+                return self._resolve_cancel_replay(uow, context, project_id, request_id, existing)
             if request.status is not RevisionRequestStatus.OPEN:
                 raise ResourceConflict("revision request is not open")
             reservation = self._reserve(
                 context,
                 project_id,
-                DeliveryOperationType.CREATE_REVISION_REQUEST,
+                DeliveryOperationType.CANCEL_REVISION_REQUEST,
                 idempotency_key,
                 digest,
             )
             won = uow.delivery_operations.reserve(reservation)
             if won is None:
-                return self._require_revision(uow, context, project_id, request_id)
+                existing = self._resolve_operation(
+                    uow,
+                    context,
+                    project_id,
+                    DeliveryOperationType.CANCEL_REVISION_REQUEST,
+                    idempotency_key,
+                    digest,
+                )
+                if existing is None:
+                    raise ResourceConflict(
+                        "revision cancellation reservation could not be resolved"
+                    )
+                return self._resolve_cancel_replay(uow, context, project_id, request_id, existing)
             now = self.clock()
             cancelled = replace(
                 request,
@@ -544,13 +550,25 @@ class ReviewRevisionDeliveryApplicationService:
             accepted = replace(
                 won,
                 status=DeliveryOperationStatus.ACCEPTED,
-                outcome_review_id=request.review_id,
+                outcome_review_id=None,
                 outcome_revision_request_id=request.id,
                 completed_at=now,
                 version=2,
             )
             uow.delivery_operations.finalize_accepted(accepted, expected_version=1)
-            return cancelled
+            uow.audit_events.append(
+                self._audit(
+                    context,
+                    request.id,
+                    "planning_revision.cancelled",
+                    {
+                        "revision_request_id": str(request.id),
+                        "review_id": str(request.review_id),
+                        "artifact_type": request.artifact_type.value,
+                    },
+                )
+            )
+            return RevisionCancellationResult(cancelled, False)
 
     def create_delivery_package(
         self,
@@ -564,6 +582,7 @@ class ReviewRevisionDeliveryApplicationService:
         idempotency_key: str,
     ) -> DeliveryResult:
         with self.uow_factory() as uow:
+            self._require_mutation(uow, context, project_id)
             script, storyboard, shot_plan = self._load_bundle(
                 uow,
                 context,
@@ -604,7 +623,6 @@ class ReviewRevisionDeliveryApplicationService:
                     uow, context, project_id, existing.outcome_delivery_package_version_id
                 )
                 return DeliveryResult(package, version, True)
-            self._require_mutation(uow, context, project_id)
             reservation = self._reserve(
                 context,
                 project_id,
@@ -700,6 +718,7 @@ class ReviewRevisionDeliveryApplicationService:
         final_key: str | None = None
         try:
             with self.uow_factory() as uow:
+                self._require_mutation(uow, context, project_id)
                 version = self._require_package_version(
                     uow, context, project_id, package_version_id
                 )
@@ -724,7 +743,6 @@ class ReviewRevisionDeliveryApplicationService:
                         uow, context, project_id, existing.outcome_export_file_id
                     )
                     return ExportResult(export, True)
-                self._require_mutation(uow, context, project_id)
                 reservation = self._reserve(
                     context,
                     project_id,
@@ -797,9 +815,9 @@ class ReviewRevisionDeliveryApplicationService:
             self._require_read(uow, context, project_id)
             export = self._require_export(uow, context, project_id, export_id)
         try:
-            return export, self.storage.read(export.storage_key)
+            return export, preflight_read(self.storage, export.storage_key)
         except StorageError as error:
-            raise StorageUnavailable("delivery export is unavailable") from error
+            raise ResourceNotFound("delivery export content is unavailable") from error
 
     def list_exports(
         self, context: TenantContext, project_id: UUID, package_version_id: UUID
@@ -1324,6 +1342,43 @@ class ReviewRevisionDeliveryApplicationService:
             None,
             None,
             1,
+        )
+
+    def _resolve_cancel_replay(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        project_id: UUID,
+        request_id: UUID,
+        operation: DeliveryOperation,
+    ) -> RevisionCancellationResult:
+        if operation.outcome_revision_request_id != request_id:
+            raise ResourceConflict("revision cancellation outcome is inconsistent")
+        request = self._require_revision(uow, context, project_id, request_id)
+        if request.status is not RevisionRequestStatus.CANCELLED:
+            raise ResourceConflict("revision cancellation outcome is not complete")
+        return RevisionCancellationResult(request, True)
+
+    def _resolve_complete_replay(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        project_id: UUID,
+        request_id: UUID,
+        operation: DeliveryOperation,
+    ) -> RevisionResult:
+        """Read the committed winner state before returning an idempotent completion."""
+        if operation.outcome_revision_request_id != request_id:
+            raise ResourceConflict("revision completion outcome is inconsistent")
+        request = self._require_revision(uow, context, project_id, request_id)
+        if request.status is not RevisionRequestStatus.COMPLETED:
+            raise ResourceConflict("revision completion outcome is not complete")
+        return RevisionResult(
+            request,
+            request.successor_script_version_id,
+            request.successor_storyboard_version_id,
+            request.successor_shot_plan_version_id,
+            True,
         )
 
     def _resolve_operation(

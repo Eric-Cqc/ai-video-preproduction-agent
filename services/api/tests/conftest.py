@@ -68,7 +68,7 @@ def _truncate(engine: Engine) -> None:
                 "shot_plan_runs, storyboard_versions, storyboard_runs, "
                 "creative_generation_operations, script_versions, script_runs, "
                 "creative_concept_selections, creative_concept_candidates, creative_concept_runs, "
-                "brief_candidate_reviews, brief_extraction_attempts, "
+                "brief_candidate_reviews, brief_extraction_operations, brief_extraction_attempts, "
                 "brief_extraction_runs, "
                 "document_extraction_operations, document_extractions, "
                 "brief_ingestion_source_assets, source_asset_operations, "

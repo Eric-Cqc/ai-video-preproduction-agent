@@ -229,6 +229,11 @@ class SourceAssetOperation:
     completed_at: datetime | None
     correlation_id: str
     version: int
+    duplicate_count: int = 0
+    result_asset_status: SourceAssetStatus | None = None
+    result_asset_latest_version_number: int | None = None
+    result_asset_aggregate_version: int | None = None
+    result_asset_updated_at: datetime | None = None
 
 
 def validate_display_name(value: str) -> str:

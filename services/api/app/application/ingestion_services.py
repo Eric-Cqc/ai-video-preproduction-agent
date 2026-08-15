@@ -2,7 +2,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -47,6 +47,18 @@ SOURCE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 MAX_SOURCE_ATTACHMENTS = 10
 
 
+def _has_brief_result_snapshot(ingestion: BriefIngestion) -> bool:
+    return all(
+        value is not None
+        for value in (
+            ingestion.result_brief_status,
+            ingestion.result_brief_latest_version_number,
+            ingestion.result_brief_aggregate_version,
+            ingestion.result_brief_updated_at,
+        )
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class BriefSourceAttachmentInput:
     source_asset_id: UUID
@@ -60,6 +72,10 @@ class IngestionResult:
     bundle: BriefBundle
     source_attachments: list[BriefIngestionSourceAsset]
     replayed: bool
+
+    @property
+    def result_snapshot_available(self) -> bool:
+        return _has_brief_result_snapshot(self.ingestion)
 
 
 class BriefIngestionApplicationService:
@@ -157,6 +173,7 @@ class BriefIngestionApplicationService:
                 brief_version_id=version_id,
                 completed_at=now,
                 expected_version=1,
+                result_brief=saved_brief,
             )
             saved_attachments = self._attach_sources(uow, context, accepted, attachments, now)
             uow.audit_events.append(
@@ -270,6 +287,7 @@ class BriefIngestionApplicationService:
                 brief_version_id=new_version_id,
                 completed_at=now,
                 expected_version=1,
+                result_brief=saved_brief,
             )
             saved_attachments = self._attach_sources(uow, context, accepted, attachments, now)
             uow.audit_events.append(
@@ -354,11 +372,37 @@ class BriefIngestionApplicationService:
     def _result(
         self, uow: UnitOfWork, context: TenantContext, ingestion: BriefIngestion, *, replayed: bool
     ) -> IngestionResult:
+        """Return a truthful accepted-ingestion result, including legacy replay labeling.
+
+        Snapshot-backed rows are reconstructed from the immutable operation-time fields. Legacy
+        rows expose the current aggregate/current version and are marked non-snapshot, avoiding a
+        mixed historical-version/current-aggregate response.
+        """
         assert ingestion.brief_id is not None and ingestion.brief_version_id is not None
         brief = self._require_brief(uow, context, ingestion.project_id, ingestion.brief_id)
-        version = self._require_version(
-            uow, context, ingestion.project_id, brief, ingestion.brief_version_id
-        )
+        if _has_brief_result_snapshot(ingestion):
+            version = self._require_version(
+                uow, context, ingestion.project_id, brief, ingestion.brief_version_id
+            )
+            assert ingestion.result_brief_status is not None
+            assert ingestion.result_brief_latest_version_number is not None
+            assert ingestion.result_brief_aggregate_version is not None
+            assert ingestion.result_brief_updated_at is not None
+            brief = replace(
+                brief,
+                status=ingestion.result_brief_status,
+                current_version_id=version.id,
+                latest_version_number=ingestion.result_brief_latest_version_number,
+                version=ingestion.result_brief_aggregate_version,
+                updated_at=ingestion.result_brief_updated_at,
+            )
+        else:
+            # Legacy accepted rows predate operation-time snapshots.  Keep the returned bundle
+            # internally consistent by exposing the current aggregate and its current version,
+            # explicitly labeled as non-snapshot by ``result_snapshot_available``.
+            version = self._require_version(
+                uow, context, ingestion.project_id, brief, brief.current_version_id
+            )
         issues = uow.requirement_issues.list(
             context.organization_id,
             context.workspace_id,

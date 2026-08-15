@@ -125,7 +125,13 @@ def test_accept_creates_first_draft_and_replays(
     )
     assert first.review.status.value == "accepted"
     assert first.review.brief_version_id is not None
+    assert first.review.brief_id is not None
     assert replay.replayed is True
+    brief_events = BriefApplicationService(
+        lambda: SqlAlchemyUnitOfWork(persistence_session_factory)
+    ).list_audit_events(context, project_id, first.review.brief_id)
+    assert [event.action for event in brief_events] == ["brief.created"]
+    assert brief_events[0].payload["brief_version_id"] == str(first.review.brief_version_id)
     with database_engine.connect() as connection:
         assert connection.scalar(text("SELECT count(*) FROM brief_candidate_reviews")) == 1
         assert connection.scalar(text("SELECT count(*) FROM brief_versions")) == 1

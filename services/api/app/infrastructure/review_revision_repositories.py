@@ -254,12 +254,14 @@ class SqlAlchemyPlanningRevisionRequestRepository:
         self, organization_id: UUID, workspace_id: UUID, project_id: UUID, request_id: UUID
     ) -> PlanningRevisionRequest | None:
         row = self.session.scalar(
-            select(PlanningRevisionRequestRecord).where(
+            select(PlanningRevisionRequestRecord)
+            .where(
                 PlanningRevisionRequestRecord.organization_id == organization_id,
                 PlanningRevisionRequestRecord.workspace_id == workspace_id,
                 PlanningRevisionRequestRecord.project_id == project_id,
                 PlanningRevisionRequestRecord.id == request_id,
             )
+            .execution_options(populate_existing=True)
         )
         return _to_revision(row) if row is not None else None
 

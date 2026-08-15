@@ -1,4 +1,24 @@
-from sqlalchemy import Engine, text
+from importlib import import_module
+from typing import cast
+
+from sqlalchemy import CheckConstraint, Engine, Table, text
+
+from services.api.app.infrastructure.models import DeliveryOperationRecord
+
+
+def test_delivery_operation_outcome_metadata_matches_cancellation_migration() -> None:
+    migration = import_module(
+        "infra.migrations.versions.c4d5e6f7a8b9_add_revision_cancellation_operation"
+    )
+    expected = cast(str, migration.__dict__["_NEW_OPERATION_OUTCOME"])
+    table = cast(Table, DeliveryOperationRecord.__table__)
+    model_constraint = next(
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+        and constraint.name == "ck_delivery_operation_outcome"
+    )
+    assert str(model_constraint.sqltext) == expected
 
 
 def test_database_schema_is_at_expected_migration_head(database_engine: Engine) -> None:
@@ -12,7 +32,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "a1b2c3d4e5f6"
+    assert revision == "d5e6f7a8b9c0"
     assert tables == {
         "organizations",
         "workspaces",
@@ -32,6 +52,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
         "source_object_cleanup_requirements",
         "document_extractions",
         "document_extraction_operations",
+        "brief_extraction_operations",
         "brief_extraction_runs",
         "brief_extraction_attempts",
         "brief_candidate_reviews",

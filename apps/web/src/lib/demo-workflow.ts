@@ -12,8 +12,14 @@ export interface DemoArtifact {
 export const deterministicDemoWorkflow: readonly DemoArtifact[] = Object.freeze(
   [
     {
-      stage: "Intake",
+      stage: "Upload",
       title: "Campaign source record",
+      version: 1,
+      state: "approved",
+    },
+    {
+      stage: "Parse",
+      title: "Structured brief extraction",
       version: 1,
       state: "approved",
     },

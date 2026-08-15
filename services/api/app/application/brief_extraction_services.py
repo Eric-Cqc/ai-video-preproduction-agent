@@ -8,7 +8,7 @@ from foundation_contracts import load_structured_brief_schema, validate_structur
 from jsonschema import Draft7Validator, ValidationError
 
 from services.api.app.application.context import TenantContext
-from services.api.app.application.errors import InvalidRequest, ResourceNotFound
+from services.api.app.application.errors import InvalidRequest, ResourceConflict, ResourceNotFound
 from services.api.app.application.model_provider import (
     ModelProviderPort,
     ModelRequest,
@@ -20,6 +20,9 @@ from services.api.app.domain import (
     AuditEvent,
     BriefExtractionAttempt,
     BriefExtractionAttemptStatus,
+    BriefExtractionOperation,
+    BriefExtractionOperationStatus,
+    BriefExtractionOperationType,
     BriefExtractionRun,
     BriefExtractionRunStatus,
     OrganizationStatus,
@@ -124,6 +127,7 @@ MAX_MODEL_OUTPUT_CHARACTERS = 262_144
 class BriefExtractionResult:
     run: BriefExtractionRun
     attempt: BriefExtractionAttempt
+    replayed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +279,8 @@ class StructuredBriefExtractionService:
         source_asset_id: UUID,
         source_asset_version_id: UUID,
         document_extraction_id: UUID,
+        *,
+        idempotency_key: str | None = None,
     ) -> BriefExtractionResult:
         with self.uow_factory() as uow:
             self._require_access(uow, context, project_id)
@@ -293,6 +299,68 @@ class StructuredBriefExtractionService:
             raise InvalidRequest("document extraction does not contain canonical text")
         if len(input_text) > MAX_MODEL_INPUT_CHARACTERS:
             raise InvalidRequest("document extraction exceeds the model input boundary")
+
+        operation: BriefExtractionOperation | None = None
+        if idempotency_key is not None:
+            request_digest = self._request_digest(
+                source_asset_id,
+                source_asset_version_id,
+                document_extraction_id,
+                extraction.extraction_checksum,
+            )
+            with self.uow_factory() as uow:
+                self._require_access(uow, context, project_id)
+                current_extraction = uow.document_extractions.get(
+                    context.organization_id,
+                    context.workspace_id,
+                    project_id,
+                    source_asset_id,
+                    source_asset_version_id,
+                    document_extraction_id,
+                )
+                if (
+                    current_extraction is None
+                    or current_extraction.extraction_checksum != extraction.extraction_checksum
+                ):
+                    raise ResourceNotFound("document extraction is not accessible")
+                reservation = BriefExtractionOperation(
+                    id=self.id_factory(),
+                    organization_id=context.organization_id,
+                    workspace_id=context.workspace_id,
+                    project_id=project_id,
+                    source_asset_id=source_asset_id,
+                    source_asset_version_id=source_asset_version_id,
+                    document_extraction_id=document_extraction_id,
+                    operation=BriefExtractionOperationType.BRIEF_EXTRACTION,
+                    run_id=None,
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                    status=BriefExtractionOperationStatus.RESERVED,
+                    submitted_by_actor_subject=context.actor_subject,
+                    submitted_at=self.clock(),
+                    completed_at=None,
+                    correlation_id=context.correlation_id,
+                    version=1,
+                )
+                operation = uow.brief_extraction_operations.reserve(reservation)
+                if operation is None:
+                    existing = uow.brief_extraction_operations.get_scoped_by_key(
+                        context.organization_id,
+                        context.workspace_id,
+                        project_id,
+                        BriefExtractionOperationType.BRIEF_EXTRACTION,
+                        idempotency_key,
+                    )
+                    if existing is None:
+                        raise ResourceConflict("brief extraction reservation could not be resolved")
+                    if existing.request_digest != request_digest:
+                        raise ResourceConflict(
+                            "idempotency key was used for a different brief extraction request",
+                            code="idempotency_conflict",
+                        )
+                    if existing.status is not BriefExtractionOperationStatus.ACCEPTED:
+                        raise ResourceConflict("brief extraction operation is not complete")
+                    return self._replay_result(uow, context, existing)
 
         started_at = self.clock()
         outcome = self.provider.complete(
@@ -382,6 +450,13 @@ class StructuredBriefExtractionService:
                 raise ResourceNotFound("document extraction is not accessible")
             saved_run = uow.brief_extraction_runs.add(run)
             saved_attempt = uow.brief_extraction_attempts.add(attempt)
+            if operation is not None:
+                uow.brief_extraction_operations.finalize_accepted(
+                    operation,
+                    run_id=run_id,
+                    completed_at=completed_at,
+                    expected_version=1,
+                )
             uow.audit_events.append(
                 AuditEvent(
                     id=self.id_factory(),
@@ -405,6 +480,47 @@ class StructuredBriefExtractionService:
                 )
             )
             return BriefExtractionResult(saved_run, saved_attempt)
+
+    def _replay_result(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        operation: BriefExtractionOperation,
+    ) -> BriefExtractionResult:
+        if operation.run_id is None:
+            raise ResourceConflict("brief extraction operation outcome is unavailable")
+        run = uow.brief_extraction_runs.get(
+            context.organization_id, context.workspace_id, operation.project_id, operation.run_id
+        )
+        if run is None:
+            raise ResourceConflict("brief extraction operation outcome is unavailable")
+        attempts = uow.brief_extraction_attempts.list_for_run(
+            context.organization_id, context.workspace_id, operation.project_id, operation.run_id
+        )
+        if not attempts:
+            raise ResourceConflict("brief extraction operation outcome is unavailable")
+        return BriefExtractionResult(run, attempts[-1], True)
+
+    @staticmethod
+    def _request_digest(
+        source_asset_id: UUID,
+        source_asset_version_id: UUID,
+        document_extraction_id: UUID,
+        extraction_checksum: str,
+    ) -> str:
+        encoded = json.dumps(
+            {
+                "source_asset_id": str(source_asset_id),
+                "source_asset_version_id": str(source_asset_version_id),
+                "document_extraction_id": str(document_extraction_id),
+                "extraction_checksum": extraction_checksum,
+                "prompt_template_id": PROMPT_TEMPLATE_ID,
+                "prompt_template_version": PROMPT_TEMPLATE_VERSION,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _validate_outcome(

@@ -1,7 +1,7 @@
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -39,8 +39,20 @@ class SourceAssetResult:
     operation: SourceAssetOperation
     asset: SourceAsset
     version: SourceAssetVersion
-    duplicate_count: int
+    duplicate_count: int | None
     replayed: bool
+
+    @property
+    def result_snapshot_available(self) -> bool:
+        return all(
+            value is not None
+            for value in (
+                self.operation.result_asset_status,
+                self.operation.result_asset_latest_version_number,
+                self.operation.result_asset_aggregate_version,
+                self.operation.result_asset_updated_at,
+            )
+        )
 
 
 class SourceAssetApplicationService:
@@ -149,6 +161,8 @@ class SourceAssetApplicationService:
                 source_asset_version_id=version_id,
                 completed_at=now,
                 expected_version=1,
+                duplicate_count=duplicate_count,
+                result_asset=saved_asset,
             )
             uow.audit_events.append(
                 self._audit(
@@ -269,6 +283,8 @@ class SourceAssetApplicationService:
                 source_asset_version_id=new_version_id,
                 completed_at=now,
                 expected_version=1,
+                duplicate_count=duplicate_count,
+                result_asset=saved_asset,
             )
             uow.audit_events.append(
                 self._audit(
@@ -338,6 +354,8 @@ class SourceAssetApplicationService:
                 source_asset_version_id=current_version.id,
                 completed_at=now,
                 expected_version=1,
+                duplicate_count=0,
+                result_asset=saved_asset,
             )
             uow.audit_events.append(
                 self._audit(
@@ -450,13 +468,49 @@ class SourceAssetApplicationService:
         *,
         replayed: bool,
     ) -> SourceAssetResult:
+        """Return a truthful accepted-asset result, including legacy replay labeling.
+
+        Snapshot-backed rows restore the operation-time aggregate and pair it with the immutable
+        operation version. Legacy rows return the current aggregate/current version and hide
+        migrated defaults that cannot be treated as historical operation results.
+        """
         if operation.source_asset_id is None or operation.source_asset_version_id is None:
             raise ResourceConflict("source asset operation does not have an accepted outcome")
         asset = self._require_asset(uow, context, operation.project_id, operation.source_asset_id)
-        version = self._require_version(
-            uow, context, operation.project_id, asset.id, operation.source_asset_version_id
-        )
-        return SourceAssetResult(operation, asset, version, 0, replayed)
+        if all(
+            value is not None
+            for value in (
+                operation.result_asset_status,
+                operation.result_asset_latest_version_number,
+                operation.result_asset_aggregate_version,
+                operation.result_asset_updated_at,
+            )
+        ):
+            version = self._require_version(
+                uow, context, operation.project_id, asset.id, operation.source_asset_version_id
+            )
+            assert operation.result_asset_status is not None
+            assert operation.result_asset_latest_version_number is not None
+            assert operation.result_asset_aggregate_version is not None
+            assert operation.result_asset_updated_at is not None
+            asset = replace(
+                asset,
+                status=operation.result_asset_status,
+                current_version_id=version.id,
+                latest_version_number=operation.result_asset_latest_version_number,
+                version=operation.result_asset_aggregate_version,
+                updated_at=operation.result_asset_updated_at,
+            )
+            duplicate_count: int | None = operation.duplicate_count
+        else:
+            # Legacy accepted rows have no operation-time aggregate snapshot.  Return the
+            # current aggregate/current version as a consistently labeled non-snapshot result;
+            # the migrated duplicate_count default is not historical truth, so hide it.
+            version = self._require_version(
+                uow, context, operation.project_id, asset.id, asset.current_version_id
+            )
+            duplicate_count = None
+        return SourceAssetResult(operation, asset, version, duplicate_count, replayed)
 
     @staticmethod
     def _require_project_access(

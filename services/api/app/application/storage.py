@@ -3,6 +3,7 @@ import os
 from collections.abc import AsyncIterable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
@@ -35,6 +36,16 @@ class StoragePort(Protocol):
     def delete(self, storage_key: str) -> None: ...
 
     def read(self, storage_key: str, *, chunk_size: int = 64 * 1024) -> Iterator[bytes]: ...
+
+
+def preflight_read(storage: StoragePort, storage_key: str) -> Iterator[bytes]:
+    """Open a stored object and consume its first chunk before building a response."""
+    try:
+        chunks = iter(storage.read(storage_key))
+        first_chunk = next(chunks)
+    except (StorageError, StopIteration) as error:
+        raise StorageError("stored object is unavailable") from error
+    return chain((first_chunk,), chunks)
 
 
 class LocalFilesystemStorageAdapter:

@@ -97,6 +97,7 @@ class CreativeApplicationService:
             {"op": "concept", "brief_id": str(brief_id), "brief_version_id": str(brief_version_id)}
         )
         with self.uow_factory() as uow:
+            self._mutate_access(uow, context, project_id)
             replay = self._replay(
                 uow,
                 context,
@@ -123,7 +124,6 @@ class CreativeApplicationService:
                     ),
                     True,
                 )
-            self._mutate_access(uow, context, project_id)
             brief = self._briefs._require_brief(uow, context, project_id, brief_id)
             version = self._briefs._require_version(
                 uow, context, project_id, brief, brief_version_id
@@ -242,6 +242,7 @@ class CreativeApplicationService:
             {"op": "select", "run_id": str(run_id), "candidate_id": str(candidate_id)}
         )
         with self.uow_factory() as uow:
+            self._mutate_access(uow, context, project_id)
             replay = self._replay(
                 uow,
                 context,
@@ -257,7 +258,6 @@ class CreativeApplicationService:
                 if selection is None:
                     raise ResourceConflict("creative replay outcome is unavailable")
                 return SelectionResult(selection, True)
-            self._mutate_access(uow, context, project_id)
             run = uow.creative_concept_runs.get(
                 context.organization_id, context.workspace_id, project_id, run_id
             )
@@ -335,6 +335,7 @@ class CreativeApplicationService:
     ) -> ScriptGenerationResult:
         digest = self._digest({"op": "script", "run_id": str(run_id)})
         with self.uow_factory() as uow:
+            self._mutate_access(uow, context, project_id)
             replay = self._replay(
                 uow,
                 context,
@@ -363,7 +364,6 @@ class CreativeApplicationService:
                 if script_run is None:
                     raise ResourceConflict("creative replay outcome is unavailable")
                 return ScriptGenerationResult(script_run, version, True)
-            self._mutate_access(uow, context, project_id)
             concept_run = uow.creative_concept_runs.get(
                 context.organization_id, context.workspace_id, project_id, run_id
             )

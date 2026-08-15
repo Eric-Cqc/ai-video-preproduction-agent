@@ -67,5 +67,6 @@ class BriefIngestionResponse(BaseModel):
     completed_at: datetime
     correlation_id: str
     replayed: bool
+    result_snapshot_available: bool
     result: BriefBundleResponse
     source_attachments: list[BriefIngestionSourceAttachmentResponse]

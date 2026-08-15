@@ -8,6 +8,8 @@ from services.api.app.domain import (
     Brief,
     BriefCandidateReview,
     BriefExtractionAttempt,
+    BriefExtractionOperation,
+    BriefExtractionOperationType,
     BriefExtractionRun,
     BriefIngestion,
     BriefIngestionOperation,
@@ -121,6 +123,7 @@ class BriefIngestionRepository(Protocol):
         brief_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
+        result_brief: Brief | None = None,
     ) -> BriefIngestion: ...
 
     def get(
@@ -254,6 +257,8 @@ class SourceAssetOperationRepository(Protocol):
         source_asset_version_id: UUID,
         completed_at: datetime,
         expected_version: int,
+        duplicate_count: int = 0,
+        result_asset: SourceAsset | None = None,
     ) -> SourceAssetOperation: ...
 
 
@@ -345,6 +350,28 @@ class BriefExtractionRunRepository(Protocol):
         project_id: UUID,
         run_id: UUID,
     ) -> BriefExtractionRun | None: ...
+
+
+class BriefExtractionOperationRepository(Protocol):
+    def reserve(self, operation: BriefExtractionOperation) -> BriefExtractionOperation | None: ...
+
+    def get_scoped_by_key(
+        self,
+        organization_id: UUID,
+        workspace_id: UUID,
+        project_id: UUID,
+        operation: BriefExtractionOperationType,
+        idempotency_key: str,
+    ) -> BriefExtractionOperation | None: ...
+
+    def finalize_accepted(
+        self,
+        operation: BriefExtractionOperation,
+        *,
+        run_id: UUID,
+        completed_at: datetime,
+        expected_version: int,
+    ) -> BriefExtractionOperation: ...
 
 
 class BriefExtractionAttemptRepository(Protocol):

@@ -27,6 +27,7 @@ class DeliveryOperationType(StrEnum):
     SUBMIT_PLANNING_REVIEW = "submit_planning_review"
     CREATE_REVISION_REQUEST = "create_revision_request"
     COMPLETE_REVISION_REQUEST = "complete_revision_request"
+    CANCEL_REVISION_REQUEST = "cancel_revision_request"
     CREATE_DELIVERY_PACKAGE = "create_delivery_package"
     EXPORT_DELIVERY_PACKAGE = "export_delivery_package"
 

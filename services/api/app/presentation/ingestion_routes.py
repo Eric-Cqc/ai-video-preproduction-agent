@@ -56,6 +56,7 @@ def _response(result: IngestionResult) -> BriefIngestionResponse:
         completed_at=completed_at,
         correlation_id=result.ingestion.correlation_id,
         replayed=result.replayed,
+        result_snapshot_available=result.result_snapshot_available,
         result=_bundle(result.bundle),
         source_attachments=[
             BriefIngestionSourceAttachmentResponse(
