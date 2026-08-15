@@ -1,9 +1,18 @@
+from types import SimpleNamespace
+from typing import cast
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
+from services.api.app.application.pilot_access import FailedAccessLimiter
 from services.api.app.config import ApiSettings
 from services.api.app.main import create_app
+from services.api.app.presentation.pilot_access_routes import (
+    PilotAccessRequest,
+    _client_key,
+    grant_pilot_access,
+)
 
 
 def _settings() -> ApiSettings:
@@ -50,3 +59,73 @@ def test_hosted_pilot_access_limits_failed_attempts() -> None:
         assert (
             client.post("/api/v1/pilot-access", json={"password": "incorrect"}).status_code == 429
         )
+
+
+def _fake_request(
+    settings: ApiSettings,
+    *,
+    socket_host: str = "10.0.0.8",
+    forwarded_for: str | None = None,
+    limiter: FailedAccessLimiter | None = None,
+) -> Request:
+    headers = {} if forwarded_for is None else {"x-forwarded-for": forwarded_for}
+    return cast(
+        Request,
+        SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    settings=settings,
+                    pilot_access_limiter=limiter or FailedAccessLimiter(),
+                )
+            ),
+            client=SimpleNamespace(host=socket_host),
+            headers=headers,
+        ),
+    )
+
+
+def test_hosted_client_key_uses_first_xff_hop_and_local_ignores_it() -> None:
+    hosted = _settings()
+    local = ApiSettings(
+        app_environment="local",
+        database_url="postgresql+psycopg://foundation:foundation@127.0.0.1:54329/foundation_test",
+    )
+    hosted_request = _fake_request(
+        hosted,
+        socket_host="172.18.0.4",
+        forwarded_for="198.51.100.7, 172.18.0.1",
+    )
+    local_request = _fake_request(
+        local,
+        socket_host="127.0.0.1",
+        forwarded_for="198.51.100.7, 127.0.0.1",
+    )
+    missing_request = _fake_request(hosted, socket_host="172.18.0.4")
+
+    assert _client_key(hosted_request, hosted) == "198.51.100.7"
+    assert _client_key(local_request, local) == "127.0.0.1"
+    assert _client_key(missing_request, hosted) == "172.18.0.4"
+
+
+def test_hosted_limiter_isolates_forwarded_clients() -> None:
+    settings = _settings()
+    limiter = FailedAccessLimiter(max_attempts=2)
+
+    first_client = _fake_request(settings, forwarded_for="198.51.100.10", limiter=limiter)
+    second_client = _fake_request(settings, forwarded_for="198.51.100.11", limiter=limiter)
+    assert (
+        grant_pilot_access(PilotAccessRequest(password="incorrect"), first_client).status_code
+        == 401
+    )
+    assert (
+        grant_pilot_access(PilotAccessRequest(password="incorrect"), second_client).status_code
+        == 401
+    )
+    assert (
+        grant_pilot_access(PilotAccessRequest(password="incorrect"), first_client).status_code
+        == 429
+    )
+    assert (
+        grant_pilot_access(PilotAccessRequest(password="incorrect"), second_client).status_code
+        == 429
+    )
