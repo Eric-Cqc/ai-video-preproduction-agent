@@ -196,6 +196,7 @@ def _to_operation(row: DeliveryOperationRecord) -> DeliveryOperation:
         output_tokens=row.output_tokens,
         total_tokens=row.total_tokens,
         provider_request_id=row.provider_request_id,
+        failure_code=row.failure_code,
     )
 
 
@@ -541,6 +542,48 @@ class SqlAlchemyDeliveryOperationRepository:
             raise VersionConflict("delivery operation changed before finalization")
         return _to_operation(row)
 
+    def takeover(self, value: DeliveryOperation, *, expected_version: int) -> DeliveryOperation | None:
+        row = self.session.scalar(
+            update(DeliveryOperationRecord)
+            .where(
+                DeliveryOperationRecord.id == value.id,
+                DeliveryOperationRecord.organization_id == value.organization_id,
+                DeliveryOperationRecord.workspace_id == value.workspace_id,
+                DeliveryOperationRecord.project_id == value.project_id,
+                DeliveryOperationRecord.operation == value.operation.value,
+                DeliveryOperationRecord.idempotency_key == value.idempotency_key,
+                DeliveryOperationRecord.request_digest == value.request_digest,
+                DeliveryOperationRecord.status == DeliveryOperationStatus.RESERVED.value,
+                DeliveryOperationRecord.version == expected_version,
+            )
+            .values(**_operation_values(value))
+            .returning(DeliveryOperationRecord)
+        )
+        return _to_operation(row) if row is not None else None
+
+    def finalize_failed(
+        self, value: DeliveryOperation, *, expected_version: int
+    ) -> DeliveryOperation:
+        row = self.session.scalar(
+            update(DeliveryOperationRecord)
+            .where(
+                DeliveryOperationRecord.id == value.id,
+                DeliveryOperationRecord.organization_id == value.organization_id,
+                DeliveryOperationRecord.workspace_id == value.workspace_id,
+                DeliveryOperationRecord.project_id == value.project_id,
+                DeliveryOperationRecord.operation == value.operation.value,
+                DeliveryOperationRecord.idempotency_key == value.idempotency_key,
+                DeliveryOperationRecord.request_digest == value.request_digest,
+                DeliveryOperationRecord.status == DeliveryOperationStatus.RESERVED.value,
+                DeliveryOperationRecord.version == expected_version,
+            )
+            .values(**_operation_values(value))
+            .returning(DeliveryOperationRecord)
+        )
+        if row is None:
+            raise VersionConflict("delivery operation changed before failure finalization")
+        return _to_operation(row)
+
 
 def _review_values(value: PlanningReview) -> dict[str, object]:
     return {
@@ -681,4 +724,5 @@ def _operation_values(value: DeliveryOperation) -> dict[str, object]:
         "output_tokens": value.output_tokens,
         "total_tokens": value.total_tokens,
         "provider_request_id": value.provider_request_id,
+        "failure_code": value.failure_code,
     }

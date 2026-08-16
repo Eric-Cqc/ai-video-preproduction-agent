@@ -35,6 +35,7 @@ class DeliveryOperationType(StrEnum):
 class DeliveryOperationStatus(StrEnum):
     RESERVED = "reserved"
     ACCEPTED = "accepted"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,3 +183,4 @@ class DeliveryOperation:
     output_tokens: int | None = None
     total_tokens: int | None = None
     provider_request_id: str | None = None
+    failure_code: str | None = None

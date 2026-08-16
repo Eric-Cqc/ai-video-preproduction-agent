@@ -11,36 +11,43 @@ from services.api.app.infrastructure.models import (
 )
 
 
-def test_delivery_operation_outcome_metadata_matches_cancellation_migration() -> None:
+def test_delivery_operation_failure_metadata_matches_revision_completion_migration() -> None:
     migration = import_module(
-        "infra.migrations.versions.c4d5e6f7a8b9_add_revision_cancellation_operation"
+        "infra.migrations.versions.a2b3c4d5e6f7_add_failed_revision_completion_operations"
     )
-    expected = cast(str, migration.__dict__["_NEW_OPERATION_OUTCOME"])
-    table = cast(Table, DeliveryOperationRecord.__table__)
-    model_constraint = next(
-        constraint
+    expected = {
+        "ck_delivery_operation_status": cast(str, migration.__dict__["_NEW_STATUS"]),
+        "ck_delivery_operation_outcome": cast(str, migration.__dict__["_NEW_OUTCOME"]),
+        "ck_audit_action": cast(str, migration.__dict__["_NEW_AUDIT"]),
+    }
+    tables = (cast(Table, DeliveryOperationRecord.__table__), cast(Table, AuditEventRecord.__table__))
+    actual = {
+        constraint.name: str(constraint.sqltext)
+        for table in tables
         for constraint in table.constraints
-        if isinstance(constraint, CheckConstraint)
-        and constraint.name == "ck_delivery_operation_outcome"
-    )
-    assert str(model_constraint.sqltext) == expected
+        if isinstance(constraint, CheckConstraint) and constraint.name in expected
+    }
+
+    assert actual == expected
 
 
 def test_failed_generation_constraints_match_failure_migration() -> None:
     migration = import_module(
         "infra.migrations.versions.f0a1b2c3d4e5_add_failed_generation_operations"
     )
+    # ck_audit_action is intentionally excluded here: a later migration
+    # (a2b3c4d5e6f7) legitimately supersedes this migration's audit-action
+    # constant by adding 'planning_revision.failed'; that supersession is
+    # covered by test_delivery_operation_failure_metadata_matches_revision_completion_migration.
     expected = {
         "ck_creative_operation_status": cast(str, migration.__dict__["_NEW_CREATIVE_STATUS"]),
         "ck_creative_operation_outcome": cast(str, migration.__dict__["_NEW_CREATIVE_OUTCOME"]),
         "ck_visual_operation_status": cast(str, migration.__dict__["_NEW_VISUAL_STATUS"]),
         "ck_visual_operation_outcome": cast(str, migration.__dict__["_NEW_VISUAL_OUTCOME"]),
-        "ck_audit_action": cast(str, migration.__dict__["_NEW_AUDIT"]),
     }
     tables = (
         cast(Table, CreativeGenerationOperationRecord.__table__),
         cast(Table, VisualPlanningOperationRecord.__table__),
-        cast(Table, AuditEventRecord.__table__),
     )
     actual = {
         constraint.name: str(constraint.sqltext)
@@ -63,7 +70,7 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "f0a1b2c3d4e5"
+    assert revision == "a2b3c4d5e6f7"
     assert tables == {
         "organizations",
         "workspaces",
