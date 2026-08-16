@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import csv
 import hashlib
 import io
@@ -62,6 +63,7 @@ from services.api.app.domain import (
     ScriptVersion,
     ShotPlanVersion,
     StoryboardVersion,
+    VersionConflict,
 )
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
@@ -473,6 +475,43 @@ class ReviewRevisionDeliveryApplicationService:
             )
             raise
 
+        try:
+            result = self._finalize_revision_completion(
+                context,
+                project_id,
+                request_id,
+                reservation,
+                request,
+                inputs,
+                contents,
+                usage,
+                idempotency_key,
+            )
+        except (ApplicationError, VersionConflict) as error:
+            # The reservation may already have been superseded (e.g. a
+            # concurrent stale takeover, or a competing mutation causing a
+            # domain-level VersionConflict on the final CAS write); if so
+            # there is nothing of ours left to mark failed, and the original
+            # error is more informative.
+            with contextlib.suppress(ResourceConflict):
+                self._finalize_revision_failure(
+                    context, project_id, request_id, reservation, error.code
+                )
+            raise
+        return result
+
+    def _finalize_revision_completion(
+        self,
+        context: TenantContext,
+        project_id: UUID,
+        request_id: UUID,
+        reservation: DeliveryOperation,
+        request: PlanningRevisionRequest,
+        inputs: _RevisionInputs,
+        contents: _RevisionContents,
+        usage: tuple[int | None, int | None, int | None, str | None],
+        idempotency_key: str,
+    ) -> RevisionResult:
         result: RevisionResult | None = None
         with self.uow_factory() as uow:
             self._require_mutation(uow, context, project_id)
@@ -1685,7 +1724,10 @@ class ReviewRevisionDeliveryApplicationService:
             )
             if current is None or current.id != reservation.id:
                 raise ResourceConflict("revision reservation changed before failure finalization")
-            if current.status is not DeliveryOperationStatus.RESERVED:
+            if (
+                current.status is not DeliveryOperationStatus.RESERVED
+                or current.version != reservation.version
+            ):
                 raise ResourceConflict("revision reservation changed before failure finalization")
             failed = replace(
                 current,

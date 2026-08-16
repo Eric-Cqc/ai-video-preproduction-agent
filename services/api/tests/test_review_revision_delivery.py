@@ -37,6 +37,7 @@ from services.api.app.domain import (
     PlanningReviewOutcome,
     ReviewArtifactType,
     RevisionRequestStatus,
+    VersionConflict,
 )
 from services.api.app.infrastructure.database import SessionFactory
 from services.api.app.infrastructure.uow import SqlAlchemyUnitOfWork
@@ -681,6 +682,199 @@ def test_stale_bundle_revision_reservation_is_taken_over(
             )
             == 3
         )
+
+
+def test_stale_attempt_failure_does_not_clobber_takeover_winner(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    """A stale attempt (A) that fails must not clobber a newer attempt (B)
+    that has already taken over the same reservation and is still RESERVED
+    (not yet accepted). This reproduces the exact race a status-only guard
+    would miss: both A and B observe status == RESERVED, so only a version
+    check can distinguish B's reservation from A's."""
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "bundle-stale-race", tmp_path
+    )
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.PLANNING_BUNDLE,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Race a stale completion attempt against its in-flight takeover.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="bundle-stale-race-review",
+    ).revision_request
+    assert request is not None
+    activity = _UoWActivity()
+    now = [datetime(2026, 8, 16, tzinfo=UTC)]
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _ActivityTrackingUoW(persistence_session_factory, activity),
+        delivery.storage,
+        _CountingRevisionProvider(activity),
+        clock=lambda: now[0],
+        stale_reservation_age_seconds=1,
+    )
+
+    # A: the first attempt reserves.
+    claimed_a = service._reserve_revision_completion(
+        seed.context, seed.project_id, request.id, "valid", "bundle-stale-race-complete"
+    )
+    assert not isinstance(claimed_a, RevisionResult)
+    _request_a, stale_reservation, _inputs_a = claimed_a
+
+    # B: after A goes stale, a second attempt takes over the SAME reservation
+    # row (still RESERVED, not yet accepted -- B has not finished generating
+    # or persisting anything).
+    now[0] += timedelta(seconds=2)
+    claimed_b = service._reserve_revision_completion(
+        seed.context, seed.project_id, request.id, "valid", "bundle-stale-race-complete"
+    )
+    assert not isinstance(claimed_b, RevisionResult)
+    _request_b, winner_reservation, _inputs_b = claimed_b
+    assert winner_reservation.id == stale_reservation.id
+    assert winner_reservation.version > stale_reservation.version
+
+    # A: the original stale attempt now finishes with a provider failure.
+    # Both A's and B's reservations share the same id and RESERVED status, so
+    # only the version guard can tell them apart -- A's failure must be
+    # rejected, and B's still-RESERVED reservation must be untouched.
+    with pytest.raises(ResourceConflict):
+        service._finalize_revision_failure(
+            seed.context,
+            seed.project_id,
+            request.id,
+            stale_reservation,
+            "provider_error",
+        )
+
+    with database_engine.connect() as connection:
+        status, version = connection.execute(
+            text(
+                "SELECT status, version FROM delivery_operations WHERE operation="
+                "'complete_revision_request' AND idempotency_key='bundle-stale-race-complete'"
+            )
+        ).one()
+    assert status == "reserved"
+    assert version == winner_reservation.version
+
+    # B can still complete normally afterward, using the reservation it holds.
+    contents, usage = service._generate_revision_contents(_request_b, _inputs_b, "valid")
+    winner = service._finalize_revision_completion(
+        seed.context,
+        seed.project_id,
+        request.id,
+        winner_reservation,
+        _request_b,
+        _inputs_b,
+        contents,
+        usage,
+        "bundle-stale-race-complete",
+    )
+    assert winner.replayed is False
+
+
+def test_domain_version_conflict_during_final_completion_still_fails_reservation_cleanly(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    """The final re-authorization/CAS write inside _finalize_revision_completion
+    persists through the repository layer, which raises a domain
+    VersionConflict (not an application-layer ApplicationError) on a losing
+    CAS -- e.g. update_completed()/finalize_accepted() racing a concurrent
+    mutation. complete_revision() must still route that through the same
+    failure-finalization cleanup, leaving the completion operation FAILED
+    (not stuck RESERVED) rather than only catching ApplicationError."""
+    del clean_database
+    seed, graph, _storyboard, _shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "revision-cas-race", tmp_path
+    )
+    review_result = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.SCRIPT,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=None,
+        shot_plan_version_id=None,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Force a domain VersionConflict during final completion.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="revision-cas-race-review",
+    )
+    request = review_result.revision_request
+    assert request is not None
+    activity = _UoWActivity()
+
+    class _LosingCasUoW:
+        def __init__(self, session_factory: SessionFactory, activity: _UoWActivity) -> None:
+            self._delegate = SqlAlchemyUnitOfWork(session_factory)
+            self._activity = activity
+
+        def __enter__(self) -> "_LosingCasUoW":
+            self._delegate.__enter__()
+            self._activity.active += 1
+            return self
+
+        def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+            self._activity.active -= 1
+            self._delegate.__exit__(exc_type, exc_value, traceback)  # type: ignore[arg-type]
+
+        def __getattr__(self, name: str) -> Any:
+            if name == "planning_revision_requests":
+                return _LosingCasRevisionRequests(self._delegate.planning_revision_requests)
+            return getattr(self._delegate, name)
+
+    class _LosingCasRevisionRequests:
+        def __init__(self, delegate: Any) -> None:
+            self._delegate = delegate
+
+        def update_completed(self, *args: Any, **kwargs: Any) -> Any:
+            raise VersionConflict("revision request changed before completion")
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._delegate, name)
+
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _LosingCasUoW(persistence_session_factory, activity),
+        delivery.storage,
+        _CountingRevisionProvider(activity),
+    )
+
+    # complete_revision() must catch the repository's domain VersionConflict
+    # (raised from the injected losing-CAS update_completed()) and route it
+    # through the same failure-finalization cleanup as an ApplicationError.
+    with pytest.raises(VersionConflict):
+        service.complete_revision(
+            seed.context,
+            seed.project_id,
+            request.id,
+            idempotency_key="revision-cas-race-complete",
+        )
+
+    with database_engine.connect() as connection:
+        status = connection.scalar(
+            text(
+                "SELECT status FROM delivery_operations WHERE operation="
+                "'complete_revision_request' AND idempotency_key='revision-cas-race-complete'"
+            )
+        )
+        successor = connection.scalar(
+            text(
+                "SELECT successor_script_version_id FROM planning_revision_requests "
+                "WHERE id = :request_id"
+            ),
+            {"request_id": str(request.id)},
+        )
+    assert status == "failed"
+    assert successor is None
 
 
 @pytest.mark.parametrize(
