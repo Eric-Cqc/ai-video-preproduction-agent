@@ -39,7 +39,10 @@ export function ReviewStage({
             <div>
               <span className="artifact-badge">Open revision request</span>
               <h3 id="revision-title">修改请求待处理</h3>
-              <p>这是服务器返回的可审计修改请求；完成后会创建新的 successor 版本。</p>
+              <p>
+                这是服务器返回的可审计修改请求；完成后会创建新的 successor
+                版本。
+              </p>
             </div>
             <span className="artifact-badge">
               {snapshot.revisionRequest.artifact_type}
@@ -49,7 +52,9 @@ export function ReviewStage({
             <div>
               <dt>审查摘要</dt>
               <dd>
-                {snapshot.revisionRequest.summary ?? latest?.summary ?? "未提供摘要"}
+                {snapshot.revisionRequest.summary ??
+                  latest?.summary ??
+                  "未提供摘要"}
               </dd>
             </div>
             <div>
@@ -126,7 +131,9 @@ export function ReviewStage({
                 修改原因
                 <textarea
                   value={reviewChanges}
-                  onChange={(event) => onReviewChangesChange(event.target.value)}
+                  onChange={(event) =>
+                    onReviewChangesChange(event.target.value)
+                  }
                   rows={3}
                   maxLength={1000}
                   placeholder="例如：Storyboard 第 2 场需要与脚本动作保持一致。"

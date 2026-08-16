@@ -153,12 +153,13 @@ function StageRail({
           return (
             <li
               key={stage.id}
-              className={stage.id === activeStage ? "active" : ""}
+              className={`rail-stage rail-stage-${state}${stage.id === activeStage ? " active" : ""}`}
             >
               <button
                 type="button"
                 className="rail-button"
                 aria-current={stage.id === activeStage ? "step" : undefined}
+                aria-label={`${stage.label}：${state === "blocked" ? "需先完成前序步骤" : stateLabel(state)}`}
                 onClick={() => onSelect(stage.id)}
               >
                 <span className="rail-number">{stage.index}</span>

@@ -25,7 +25,10 @@ function statusClass(state: StageState): string {
   return `stage-state stage-state-${state}`;
 }
 
-export function WorkspaceStage({ activeStage, ...stageProps }: StageProps & {
+export function WorkspaceStage({
+  activeStage,
+  ...stageProps
+}: StageProps & {
   activeStage: StageId;
 }) {
   const state = stageStatuses(stageProps.snapshot)[activeStage];

@@ -62,10 +62,15 @@ export function BriefStage({
         <div>
           <span className="artifact-badge">Human review required</span>
           <h3>审查 Brief 候选</h3>
-          <p>候选字段和要求问题均来自当前提取运行。只有你的操作会创建 Brief 版本。</p>
+          <p>
+            候选字段和要求问题均来自当前提取运行。只有你的操作会创建 Brief
+            版本。
+          </p>
         </div>
         {snapshot.candidateReview ? (
-          <span className="artifact-badge">{snapshot.candidateReview.status}</span>
+          <span className="artifact-badge">
+            {snapshot.candidateReview.status}
+          </span>
         ) : null}
       </div>
       <BriefSurface
