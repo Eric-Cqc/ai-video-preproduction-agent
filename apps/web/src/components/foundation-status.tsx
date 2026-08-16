@@ -138,13 +138,34 @@ function StageRail({
   onSelect: (stage: StageId) => void;
 }) {
   const statuses = snapshot ? stageStatuses(snapshot) : undefined;
+  const [isExpanded, setIsExpanded] = useState(false);
+  const activeStageDefinition = stageDefinitions.find(
+    (stage) => stage.id === activeStage,
+  );
   return (
-    <nav className="production-rail" aria-label="制作阶段">
+    <nav
+      className="production-rail"
+      aria-label="制作阶段"
+      data-expanded={isExpanded}
+    >
       <p className="rail-label">Production rail</p>
+      <button
+        type="button"
+        className="rail-toggle"
+        aria-label={`制作阶段导航，${isExpanded ? "收起" : "展开"}`}
+        aria-controls="production-stage-list"
+        aria-expanded={isExpanded}
+        onClick={() => setIsExpanded((expanded) => !expanded)}
+      >
+        <span aria-hidden="true">制作阶段</span>
+        <span className="rail-toggle-state" aria-hidden="true">
+          {isExpanded ? "收起" : activeStageDefinition?.label}
+        </span>
+      </button>
       {!snapshot ? (
         <p className="rail-empty">选择项目后载入真实阶段状态。</p>
       ) : null}
-      <ol>
+      <ol className="stage-list" id="production-stage-list">
         {stageDefinitions.map((stage) => {
           const state = statuses?.[stage.id] ?? "blocked";
           return (
@@ -157,11 +178,18 @@ function StageRail({
                 className="rail-button"
                 aria-current={stage.id === activeStage ? "step" : undefined}
                 aria-label={`${stage.label}：${state === "blocked" ? "需先完成前序步骤" : stateLabel(state)}`}
-                onClick={() => onSelect(stage.id)}
+                onClick={() => {
+                  onSelect(stage.id);
+                  setIsExpanded(false);
+                }}
               >
                 <span className="rail-number">{stage.index}</span>
-                <span className="rail-stage-name">{stage.label}</span>
-                <span className={statusClass(state)}>{stateLabel(state)}</span>
+                <span className="rail-stage-copy">
+                  <span className="rail-stage-name">{stage.label}</span>
+                  <span className={statusClass(state)}>
+                    {stateLabel(state)}
+                  </span>
+                </span>
               </button>
             </li>
           );
