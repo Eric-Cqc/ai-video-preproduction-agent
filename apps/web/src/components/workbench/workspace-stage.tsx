@@ -61,14 +61,20 @@ export function WorkspaceStage({
   return (
     <section className="stage-workspace" aria-labelledby="stage-title">
       <div className="stage-heading">
-        <div>
+        <div className="stage-heading-copy">
           <p className="eyebrow">
             {stage.eyebrow} · {stage.index}
           </p>
           <h2 id="stage-title">{stage.label}</h2>
           <p>{stageDescription(stageProps.snapshot, activeStage)}</p>
         </div>
-        <span className={statusClass(state)}>{stateLabel(state)}</span>
+        <div className="stage-heading-status">
+          <span className="stage-progress">
+            Stage {stage.index} /{" "}
+            {String(stageDefinitions.length).padStart(2, "0")}
+          </span>
+          <span className={statusClass(state)}>{stateLabel(state)}</span>
+        </div>
       </div>
       {stageProps.snapshot.errors[activeStage] ? (
         <ErrorPanel

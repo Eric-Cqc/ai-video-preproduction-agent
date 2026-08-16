@@ -65,24 +65,24 @@ h4 {
 
 h1 {
   margin-bottom: 0.35rem;
-  font-size: clamp(2.5rem, 5vw, 4.8rem);
-  line-height: 0.92;
+  font-size: var(--type-display);
+  line-height: 1.02;
 }
 
 h2 {
   margin-bottom: 0.4rem;
-  font-size: clamp(1.75rem, 3vw, 2.7rem);
+  font-size: var(--type-title);
   line-height: 1;
 }
 
 h3 {
   margin-bottom: 0.4rem;
-  font-size: 1.35rem;
+  font-size: var(--type-section);
 }
 
 h4 {
   margin-bottom: 0.6rem;
-  font-size: var(--space-4);
+  font-size: var(--type-body);
 }
 
 p {
@@ -182,7 +182,7 @@ pre {
 }
 
 .main-panel {
-  min-height: 48rem;
+  min-height: 0;
   padding: clamp(var(--space-4), 3vw, 2.2rem);
 }
 
@@ -1542,7 +1542,6 @@ h4,
 }
 
 .masthead h1 {
-  font-size: clamp(2rem, 3.6vw, 3.25rem);
   line-height: 1.05;
 }
 
@@ -1588,7 +1587,7 @@ h4,
 }
 
 .main-panel {
-  min-height: 50rem;
+  min-height: 0;
   padding: clamp(1rem, 2.25vw, 2rem);
   background: var(--surface);
 }
@@ -2252,5 +2251,238 @@ h4,
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* Stage 23 Phase 3: type scale and working-layout polish. */
+:root {
+  font-synthesis: none;
+}
+
+body {
+  letter-spacing: 0.002em;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+.rail-number,
+.stage-progress {
+  font-family: var(--font-mono);
+}
+
+h1,
+h2,
+h3,
+h4,
+.project-card strong,
+.concept-idea {
+  font-weight: 680;
+  letter-spacing: -0.03em;
+}
+
+.masthead h1 {
+  max-width: 14ch;
+  line-height: 1.02;
+}
+
+.masthead-subtitle {
+  max-width: 42rem;
+  font-size: var(--type-body);
+  line-height: 1.55;
+}
+
+.workspace-grid {
+  max-width: 1640px;
+  grid-template-columns: minmax(13.5rem, 14.5rem) minmax(0, 1fr) minmax(
+      17.5rem,
+      19.5rem
+    );
+  gap: clamp(1rem, 1.7vw, 1.75rem);
+}
+
+.left-panel {
+  padding: 1.1rem 0.75rem;
+}
+
+.main-panel {
+  padding: clamp(1.15rem, 2.6vw, 2.35rem);
+}
+
+.right-panel {
+  padding: 1.3rem;
+}
+
+.production-rail ol {
+  gap: 0.24rem;
+}
+
+.rail-toggle {
+  display: none;
+}
+
+.production-rail li::before {
+  top: 0.55rem;
+  bottom: 0.55rem;
+}
+
+.rail-button {
+  min-height: 3.7rem;
+  grid-template-columns: 1.55rem minmax(0, 1fr);
+  gap: 0.12rem 0.45rem;
+  padding: 0.58rem 0.55rem 0.58rem 0.75rem;
+}
+
+.rail-number {
+  align-self: start;
+  padding-top: 0.08rem;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-stage-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.rail-stage-name {
+  line-height: 1.2;
+}
+
+.left-panel .stage-state {
+  min-height: 0.9rem;
+  font-size: 0.61rem;
+  font-weight: 750;
+  letter-spacing: 0.025em;
+  line-height: 1.1;
+}
+
+.stage-workspace {
+  margin-top: 1.5rem;
+}
+
+.stage-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: clamp(1rem, 3vw, 2.5rem);
+  padding-bottom: 1.15rem;
+}
+
+.stage-heading-copy {
+  min-width: 0;
+}
+
+.stage-heading h2 {
+  margin-bottom: 0.38rem;
+  font-size: var(--type-title);
+  line-height: 1.08;
+}
+
+.stage-heading p:last-child {
+  max-width: 52rem;
+  font-size: var(--type-body);
+  line-height: 1.6;
+}
+
+.stage-heading-status {
+  display: grid;
+  min-width: max-content;
+  justify-items: end;
+  gap: 0.42rem;
+  padding-top: 0.15rem;
+}
+
+.stage-progress {
+  color: var(--text-faint);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.stage-heading > .stage-state,
+.stage-heading-status > .stage-state {
+  margin-top: 0;
+}
+
+@media (max-width: 1180px) {
+  .workspace-grid {
+    grid-template-columns: minmax(12.25rem, 13.5rem) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .left-panel {
+    padding: 0.75rem 0;
+  }
+
+  .left-panel .rail-label,
+  .left-panel .eyebrow,
+  .rail-empty,
+  .left-panel .context-panel p,
+  .left-panel .boundary-note p:last-child {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .rail-toggle {
+    display: flex;
+    width: calc(100% - 1.5rem);
+    margin: 0 0.75rem;
+    padding: 0.65rem 0.7rem;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-strong);
+    font-size: 0.78rem;
+    font-weight: 750;
+    text-align: left;
+  }
+
+  .rail-toggle-state {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 650;
+  }
+
+  .production-rail .stage-list {
+    grid-template-columns: 1fr;
+    padding: 0.5rem 0.75rem 0;
+    gap: 0.24rem;
+  }
+
+  .production-rail[data-expanded="false"] .stage-list {
+    display: none;
+  }
+
+  .rail-button {
+    min-height: 3.6rem;
+    grid-template-columns: 1.35rem minmax(0, 1fr);
+    padding: 0.55rem 0.6rem;
+  }
+
+  .rail-stage-name {
+    font-size: 0.82rem;
+  }
+
+  .context-panel,
+  .boundary-note {
+    margin-right: 0.75rem;
+    margin-left: 0.75rem;
+  }
+
+  .stage-heading {
+    grid-template-columns: 1fr;
+    gap: 0.7rem;
+  }
+
+  .stage-heading-status {
+    grid-template-columns: auto auto;
+    justify-content: start;
+    justify-items: start;
+    padding-top: 0;
   }
 }
