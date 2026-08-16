@@ -9,6 +9,11 @@ import type {
 } from "../lib/api/product-client";
 import { Badge } from "./ui/badge";
 
+function truncateChecksum(checksum: string): string {
+  if (checksum.length <= 18) return checksum;
+  return `${checksum.slice(0, 10)}…${checksum.slice(-6)}`;
+}
+
 interface BriefSurfaceProps {
   content: JsonRecord;
   issues: readonly IssueLike[];
@@ -503,7 +508,12 @@ export function DeliverySurface({
                 </div>
                 <div className="export-checksum">
                   <span>ZIP checksum</span>
-                  <code>{item.checksum}</code>
+                  <code
+                    title={item.checksum}
+                    aria-label={`完整 ZIP checksum：${item.checksum}`}
+                  >
+                    {truncateChecksum(item.checksum)}
+                  </code>
                 </div>
               </div>
             ))}

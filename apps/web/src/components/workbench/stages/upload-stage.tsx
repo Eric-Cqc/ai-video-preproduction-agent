@@ -2,6 +2,11 @@ import { Button } from "../../ui/button";
 import { Panel } from "../../ui/panel";
 import type { StageProps } from "./stage-props";
 
+function truncateChecksum(checksum: string): string {
+  if (checksum.length <= 18) return checksum;
+  return `${checksum.slice(0, 10)}…${checksum.slice(-6)}`;
+}
+
 type UploadStageProps = Pick<
   StageProps,
   "snapshot" | "sourceFile" | "busy" | "onFileChange" | "onUpload"
@@ -57,7 +62,12 @@ export function UploadStage({
           <div>
             <dt>Checksum</dt>
             <dd>
-              <code>{snapshot.sourceAsset.current_version.checksum_value}</code>
+              <code
+                title={snapshot.sourceAsset.current_version.checksum_value}
+                aria-label={`完整 Checksum：${snapshot.sourceAsset.current_version.checksum_value}`}
+              >
+                {truncateChecksum(snapshot.sourceAsset.current_version.checksum_value)}
+              </code>
             </dd>
           </div>
           <div>
