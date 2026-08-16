@@ -8,7 +8,8 @@ import zipfile
 from collections.abc import AsyncIterator, Callable, Iterable
 from copy import deepcopy
 from dataclasses import dataclass, replace
-from typing import cast
+from datetime import datetime
+from typing import Protocol, cast
 from uuid import UUID, uuid4
 
 from foundation_contracts import validate_script, validate_shot_plan, validate_storyboard
@@ -17,6 +18,7 @@ from jsonschema import ValidationError
 from services.api.app.application.brief_services import BriefApplicationService
 from services.api.app.application.context import TenantContext
 from services.api.app.application.errors import (
+    ApplicationError,
     InvalidRequest,
     PermissionDenied,
     ResourceConflict,
@@ -28,6 +30,9 @@ from services.api.app.application.model_provider import (
     ModelRequest,
     ProviderOutcome,
     ProviderOutcomeStatus,
+)
+from services.api.app.application.model_provider import (
+    stale_reservation_age_seconds as stale_reservation_age_seconds_for_provider,
 )
 from services.api.app.application.services import (
     MUTATION_ROLES,
@@ -65,6 +70,17 @@ SCHEMA_VERSION = "delivery-package-v1"
 MAX_EXPORT_BYTES = 10 * 1024 * 1024
 MAX_REQUESTED_CHANGES_BYTES = 16 * 1024
 MAX_REQUESTED_CHANGES_DEPTH = 8
+FAILED_REVISION_OPERATION_CODES = frozenset(
+    {
+        "refusal",
+        "timeout",
+        "provider_error",
+        "malformed_output",
+        "schema_invalid",
+        "semantic_invalid",
+        "input_digest_changed",
+    }
+)
 EXPORT_FORMATS = frozenset(
     {
         "manifest.json",
@@ -148,6 +164,32 @@ class ExportResult:
     replayed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _RevisionInputs:
+    script: ScriptVersion | None
+    storyboard: StoryboardVersion | None
+    shot_plan: ShotPlanVersion | None
+    validation_script: ScriptVersion | None
+    validation_storyboard: StoryboardVersion | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RevisionContents:
+    script: dict[str, object] | None
+    storyboard: dict[str, object] | None
+    shot_plan: dict[str, object] | None
+
+
+class _RecoverableDeliveryOperations(Protocol):
+    def takeover(
+        self, value: DeliveryOperation, *, expected_version: int
+    ) -> DeliveryOperation | None: ...
+
+    def finalize_failed(
+        self, value: DeliveryOperation, *, expected_version: int
+    ) -> DeliveryOperation: ...
+
+
 class ReviewRevisionDeliveryApplicationService:
     def __init__(
         self,
@@ -157,12 +199,18 @@ class ReviewRevisionDeliveryApplicationService:
         *,
         clock: Clock = utc_now,
         id_factory: IdFactory = uuid4,
+        stale_reservation_age_seconds: float | None = None,
     ) -> None:
         self.uow_factory = uow_factory
         self.storage = storage
         self.provider = provider
         self.clock = clock
         self.id_factory = id_factory
+        self.stale_reservation_age_seconds = (
+            stale_reservation_age_seconds
+            if stale_reservation_age_seconds is not None
+            else stale_reservation_age_seconds_for_provider(provider)
+        )
         self._briefs = BriefApplicationService(uow_factory, clock=clock, id_factory=id_factory)
 
     def _revision_content(
@@ -411,97 +459,98 @@ class ReviewRevisionDeliveryApplicationService:
         provider_mode: str = "valid",
         idempotency_key: str,
     ) -> RevisionResult:
+        claimed = self._reserve_revision_completion(
+            context, project_id, request_id, provider_mode, idempotency_key
+        )
+        if isinstance(claimed, RevisionResult):
+            return claimed
+        request, reservation, inputs = claimed
+        try:
+            contents, usage = self._generate_revision_contents(request, inputs, provider_mode)
+        except ApplicationError as error:
+            self._finalize_revision_failure(
+                context, project_id, request_id, reservation, error.code
+            )
+            raise
+
+        result: RevisionResult | None = None
         with self.uow_factory() as uow:
             self._require_mutation(uow, context, project_id)
-            request = self._require_revision(uow, context, project_id, request_id)
-            mode_set = _mode_set(request.artifact_type)
-            if provider_mode not in mode_set:
-                raise InvalidRequest("revision mode is not permitted", code="invalid_provider_mode")
-            digest = _digest(
-                {
-                    "scope": _scope(context, project_id),
-                    "request_id": str(request.id),
-                    "request_digest": request.request_digest,
-                    "provider_mode": provider_mode,
-                }
-            )
-            existing = self._resolve_operation(
-                uow,
-                context,
-                project_id,
-                DeliveryOperationType.COMPLETE_REVISION_REQUEST,
-                idempotency_key,
-                digest,
-            )
-            if existing is not None:
-                return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
-            if request.status is not RevisionRequestStatus.OPEN:
-                raise ResourceConflict("revision request is not open")
-            review = self._require_review(uow, context, project_id, request.review_id)
-            if review.outcome is not PlanningReviewOutcome.REVISION_REQUESTED:
-                raise ResourceConflict("revision request is not actionable")
-            reservation = self._reserve(
-                context,
-                project_id,
-                DeliveryOperationType.COMPLETE_REVISION_REQUEST,
-                idempotency_key,
-                digest,
-            )
-            won = uow.delivery_operations.reserve(reservation)
-            if won is None:
-                existing = self._resolve_operation(
-                    uow,
-                    context,
+            try:
+                current_request = self._require_revision(uow, context, project_id, request_id)
+                if current_request.status is not RevisionRequestStatus.OPEN:
+                    raise ResourceConflict("revision request is not open")
+                if current_request.request_digest != request.request_digest:
+                    raise ResourceConflict(
+                        "revision request changed during generation", code="input_digest_changed"
+                    )
+                current_reservation = uow.delivery_operations.get_by_key(
+                    context.organization_id,
+                    context.workspace_id,
                     project_id,
                     DeliveryOperationType.COMPLETE_REVISION_REQUEST,
                     idempotency_key,
-                    digest,
                 )
-                if existing is None:
-                    raise ResourceConflict("revision reservation could not be resolved")
-                return self._resolve_complete_replay(uow, context, project_id, request_id, existing)
-            self._validate_revision_requested_changes(request)
-            successors, usage = self._create_successors(
-                uow, context, project_id, request, provider_mode
-            )
-            now = self.clock()
-            completed = replace(
-                request,
-                status=RevisionRequestStatus.COMPLETED,
-                completed_at=now,
-                successor_script_version_id=successors[0],
-                successor_storyboard_version_id=successors[1],
-                successor_shot_plan_version_id=successors[2],
-                version=request.version + 1,
-            )
-            uow.planning_revision_requests.update_completed(
-                completed, expected_version=request.version
-            )
-            accepted = replace(
-                won,
-                status=DeliveryOperationStatus.ACCEPTED,
-                outcome_revision_request_id=request.id,
-                completed_at=now,
-                version=2,
-                input_tokens=usage[0],
-                output_tokens=usage[1],
-                total_tokens=usage[2],
-                provider_request_id=usage[3],
-            )
-            uow.delivery_operations.finalize_accepted(accepted, expected_version=1)
-            uow.audit_events.append(
-                self._audit(
-                    context,
-                    request.id,
-                    "planning_revision.completed",
-                    {
-                        "revision_request_id": str(request.id),
-                        "artifact_type": request.artifact_type.value,
-                        "successor_count": sum(item is not None for item in successors),
-                    },
+                if current_reservation is None or current_reservation.id != reservation.id:
+                    raise ResourceConflict("revision reservation changed during generation")
+                if (
+                    current_reservation.status is not DeliveryOperationStatus.RESERVED
+                    or current_reservation.version != reservation.version
+                ):
+                    raise ResourceConflict("revision reservation changed during generation")
+                current_inputs = self._revision_inputs(uow, context, project_id, current_request)
+                self._validate_revision_inputs_unchanged(inputs, current_inputs)
+                successors = self._persist_successors(
+                    uow, context, project_id, current_request, current_inputs, contents
                 )
-            )
-            return RevisionResult(completed, successors[0], successors[1], successors[2], False)
+                now = self.clock()
+                completed = replace(
+                    current_request,
+                    status=RevisionRequestStatus.COMPLETED,
+                    completed_at=now,
+                    successor_script_version_id=successors[0],
+                    successor_storyboard_version_id=successors[1],
+                    successor_shot_plan_version_id=successors[2],
+                    version=current_request.version + 1,
+                )
+                uow.planning_revision_requests.update_completed(
+                    completed, expected_version=current_request.version
+                )
+                accepted = replace(
+                    current_reservation,
+                    status=DeliveryOperationStatus.ACCEPTED,
+                    outcome_revision_request_id=current_request.id,
+                    completed_at=now,
+                    version=current_reservation.version + 1,
+                    input_tokens=usage[0],
+                    output_tokens=usage[1],
+                    total_tokens=usage[2],
+                    provider_request_id=usage[3],
+                    failure_code=None,
+                )
+                uow.delivery_operations.finalize_accepted(
+                    accepted, expected_version=current_reservation.version
+                )
+                uow.audit_events.append(
+                    self._audit(
+                        context,
+                        current_request.id,
+                        "planning_revision.completed",
+                        {
+                            "revision_request_id": str(current_request.id),
+                            "artifact_type": current_request.artifact_type.value,
+                            "successor_count": sum(item is not None for item in successors),
+                        },
+                    )
+                )
+                result = RevisionResult(
+                    completed, successors[0], successors[1], successors[2], False
+                )
+            except ApplicationError:
+                raise
+        if result is None:
+            raise ResourceConflict("revision completion outcome is unavailable")
+        return result
 
     def cancel_revision(
         self, context: TenantContext, project_id: UUID, request_id: UUID, *, idempotency_key: str
@@ -842,91 +891,184 @@ class ReviewRevisionDeliveryApplicationService:
                 context.organization_id, context.workspace_id, project_id, package_version_id
             )
 
-    def _create_successors(
+    def _reserve_revision_completion(
+        self,
+        context: TenantContext,
+        project_id: UUID,
+        request_id: UUID,
+        provider_mode: str,
+        idempotency_key: str,
+    ) -> tuple[PlanningRevisionRequest, DeliveryOperation, _RevisionInputs] | RevisionResult:
+        with self.uow_factory() as uow:
+            # Authorization deliberately precedes idempotent replay, as in Stage 20 A1.
+            self._require_mutation(uow, context, project_id)
+            request = self._require_revision(uow, context, project_id, request_id)
+            if provider_mode not in _mode_set(request.artifact_type):
+                raise InvalidRequest("revision mode is not permitted", code="invalid_provider_mode")
+            digest = _digest(
+                {
+                    "scope": _scope(context, project_id),
+                    "request_id": str(request.id),
+                    "request_digest": request.request_digest,
+                    "provider_mode": provider_mode,
+                }
+            )
+            existing = uow.delivery_operations.get_by_key(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                DeliveryOperationType.COMPLETE_REVISION_REQUEST,
+                idempotency_key,
+            )
+            if existing is not None:
+                self._validate_completion_operation_digest(existing, digest)
+                if existing.status is DeliveryOperationStatus.ACCEPTED:
+                    return self._resolve_complete_replay(
+                        uow, context, project_id, request_id, existing
+                    )
+                if existing.status is DeliveryOperationStatus.FAILED:
+                    raise ResourceConflict(
+                        "revision completion operation failed",
+                        code=existing.failure_code or "provider_error",
+                    )
+                reservation = self._takeover_stale_completion_reservation(uow, context, existing)
+            else:
+                candidate = self._reserve(
+                    context,
+                    project_id,
+                    DeliveryOperationType.COMPLETE_REVISION_REQUEST,
+                    idempotency_key,
+                    digest,
+                )
+                won = uow.delivery_operations.reserve(candidate)
+                if won is None:
+                    existing = uow.delivery_operations.get_by_key(
+                        context.organization_id,
+                        context.workspace_id,
+                        project_id,
+                        DeliveryOperationType.COMPLETE_REVISION_REQUEST,
+                        idempotency_key,
+                    )
+                    if existing is None:
+                        raise ResourceConflict("revision reservation could not be resolved")
+                    self._validate_completion_operation_digest(existing, digest)
+                    if existing.status is DeliveryOperationStatus.ACCEPTED:
+                        return self._resolve_complete_replay(
+                            uow, context, project_id, request_id, existing
+                        )
+                    if existing.status is DeliveryOperationStatus.FAILED:
+                        raise ResourceConflict(
+                            "revision completion operation failed",
+                            code=existing.failure_code or "provider_error",
+                        )
+                    reservation = self._takeover_stale_completion_reservation(
+                        uow, context, existing
+                    )
+                else:
+                    reservation = won
+            if request.status is not RevisionRequestStatus.OPEN:
+                raise ResourceConflict("revision request is not open")
+            review = self._require_review(uow, context, project_id, request.review_id)
+            if review.outcome is not PlanningReviewOutcome.REVISION_REQUESTED:
+                raise ResourceConflict("revision request is not actionable")
+            self._validate_revision_requested_changes(request)
+            return request, reservation, self._revision_inputs(uow, context, project_id, request)
+
+    def _generate_revision_contents(
+        self, request: PlanningRevisionRequest, inputs: _RevisionInputs, mode: str
+    ) -> tuple[_RevisionContents, tuple[int | None, int | None, int | None, str | None]]:
+        script_content: dict[str, object] | None = None
+        storyboard_content: dict[str, object] | None = None
+        shot_content: dict[str, object] | None = None
+        outcomes: list[ProviderOutcome] = []
+        script_for_validation = inputs.validation_script
+        storyboard_for_validation = inputs.validation_storyboard
+        if inputs.script is not None:
+            script_content, outcome = self._revision_content(
+                deepcopy(inputs.script.content), request.requested_changes, mode, "script"
+            )
+            if outcome is not None:
+                outcomes.append(outcome)
+            self._validate_script(script_content)
+            script_for_validation = replace(
+                inputs.script,
+                content=script_content,
+                content_digest=_content_digest(script_content),
+            )
+        if inputs.storyboard is not None:
+            storyboard_content, outcome = self._revision_content(
+                deepcopy(inputs.storyboard.content), request.requested_changes, mode, "storyboard"
+            )
+            if outcome is not None:
+                outcomes.append(outcome)
+            if script_for_validation is None:
+                raise ResourceConflict("storyboard revision has no script input")
+            self._validate_storyboard(storyboard_content, script_for_validation)
+            storyboard_for_validation = replace(
+                inputs.storyboard,
+                content=storyboard_content,
+                content_digest=_content_digest(storyboard_content),
+            )
+        if inputs.shot_plan is not None:
+            shot_content, outcome = self._revision_content(
+                deepcopy(inputs.shot_plan.content), request.requested_changes, mode, "shot_plan"
+            )
+            if outcome is not None:
+                outcomes.append(outcome)
+            if script_for_validation is None or storyboard_for_validation is None:
+                raise ResourceConflict("shot plan revision has incomplete planning inputs")
+            self._validate_shot_plan(shot_content, storyboard_for_validation, script_for_validation)
+        return _RevisionContents(script_content, storyboard_content, shot_content), _provider_usage(
+            outcomes
+        )
+
+    def _persist_successors(
         self,
         uow: UnitOfWork,
         context: TenantContext,
         project_id: UUID,
         request: PlanningRevisionRequest,
-        mode: str,
-    ) -> tuple[
-        tuple[UUID | None, UUID | None, UUID | None],
-        tuple[int | None, int | None, int | None, str | None],
-    ]:
+        inputs: _RevisionInputs,
+        contents: _RevisionContents,
+    ) -> tuple[UUID | None, UUID | None, UUID | None]:
         script_successor: ScriptVersion | None = None
         storyboard_successor: StoryboardVersion | None = None
         shot_successor: ShotPlanVersion | None = None
-        outcomes: list[ProviderOutcome] = []
-        if request.source_script_version_id is not None:
-            source_script = self._require_script(
-                uow, context, project_id, request.source_script_version_id
-            )
-            content, outcome = self._revision_content(
-                source_script.content, request.requested_changes, mode, "script"
-            )
-            if outcome is not None:
-                outcomes.append(outcome)
-            self._validate_script(content)
+        if inputs.script is not None:
+            if contents.script is None:
+                raise ResourceConflict("script successor content is unavailable")
             script_successor = self._successor_script(
-                uow, context, project_id, source_script, content, request.id
+                uow, context, project_id, inputs.script, contents.script, request.id
             )
-        if request.source_storyboard_version_id is not None:
-            source_storyboard = self._require_storyboard(
-                uow, context, project_id, request.source_storyboard_version_id
-            )
-            content, outcome = self._revision_content(
-                source_storyboard.content, request.requested_changes, mode, "storyboard"
-            )
-            if outcome is not None:
-                outcomes.append(outcome)
-            script = script_successor or self._require_script(
-                uow, context, project_id, source_storyboard.script_version_id
-            )
-            self._validate_storyboard(content, script)
+        if inputs.storyboard is not None:
+            if contents.storyboard is None:
+                raise ResourceConflict("storyboard successor content is unavailable")
             storyboard_successor = self._successor_storyboard(
                 uow,
                 context,
                 project_id,
-                source_storyboard,
-                content,
+                inputs.storyboard,
+                contents.storyboard,
                 script_successor,
                 request.id,
             )
-        if request.source_shot_plan_version_id is not None:
-            source_shot = self._require_shot_plan(
-                uow, context, project_id, request.source_shot_plan_version_id
-            )
-            content, outcome = self._revision_content(
-                source_shot.content, request.requested_changes, mode, "shot_plan"
-            )
-            if outcome is not None:
-                outcomes.append(outcome)
-            storyboard = storyboard_successor or self._require_storyboard(
-                uow, context, project_id, source_shot.storyboard_version_id
-            )
-            script = script_successor or self._require_script(
-                uow, context, project_id, source_shot.script_version_id
-            )
-            self._validate_shot_plan(content, storyboard, script)
+        if inputs.shot_plan is not None:
+            if contents.shot_plan is None:
+                raise ResourceConflict("shot plan successor content is unavailable")
             shot_successor = self._successor_shot_plan(
                 uow,
                 context,
                 project_id,
-                source_shot,
-                content,
+                inputs.shot_plan,
+                contents.shot_plan,
                 storyboard_successor,
                 script_successor,
                 request.id,
             )
-        if script_successor is None and request.source_script_version_id is not None:
-            raise ResourceConflict("script successor was not created")
         return (
-            (
-                script_successor.id if script_successor else None,
-                storyboard_successor.id if storyboard_successor else None,
-                shot_successor.id if shot_successor else None,
-            ),
-            _provider_usage(outcomes),
+            script_successor.id if script_successor else None,
+            storyboard_successor.id if storyboard_successor else None,
+            shot_successor.id if shot_successor else None,
         )
 
     def _successor_script(
@@ -1431,6 +1573,155 @@ class ReviewRevisionDeliveryApplicationService:
             request.successor_shot_plan_version_id,
             True,
         )
+
+    def _revision_inputs(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        project_id: UUID,
+        request: PlanningRevisionRequest,
+    ) -> _RevisionInputs:
+        script = (
+            self._require_script(uow, context, project_id, request.source_script_version_id)
+            if request.source_script_version_id is not None
+            else None
+        )
+        storyboard = (
+            self._require_storyboard(uow, context, project_id, request.source_storyboard_version_id)
+            if request.source_storyboard_version_id is not None
+            else None
+        )
+        shot_plan = (
+            self._require_shot_plan(uow, context, project_id, request.source_shot_plan_version_id)
+            if request.source_shot_plan_version_id is not None
+            else None
+        )
+        validation_storyboard = storyboard
+        if validation_storyboard is None and shot_plan is not None:
+            validation_storyboard = self._require_storyboard(
+                uow, context, project_id, shot_plan.storyboard_version_id
+            )
+        validation_script = script
+        if validation_script is None and validation_storyboard is not None:
+            validation_script = self._require_script(
+                uow, context, project_id, validation_storyboard.script_version_id
+            )
+        if validation_script is None and shot_plan is not None:
+            validation_script = self._require_script(
+                uow, context, project_id, shot_plan.script_version_id
+            )
+        return _RevisionInputs(
+            script, storyboard, shot_plan, validation_script, validation_storyboard
+        )
+
+    @staticmethod
+    def _validate_revision_inputs_unchanged(
+        initial: _RevisionInputs, current: _RevisionInputs
+    ) -> None:
+        initial_values = (
+            initial.script,
+            initial.storyboard,
+            initial.shot_plan,
+            initial.validation_script,
+            initial.validation_storyboard,
+        )
+        current_values = (
+            current.script,
+            current.storyboard,
+            current.shot_plan,
+            current.validation_script,
+            current.validation_storyboard,
+        )
+        if [
+            (value.id, value.content_digest) if value is not None else None
+            for value in initial_values
+        ] != [
+            (value.id, value.content_digest) if value is not None else None
+            for value in current_values
+        ]:
+            raise ResourceConflict(
+                "revision inputs changed during generation", code="input_digest_changed"
+            )
+
+    def _takeover_stale_completion_reservation(
+        self,
+        uow: UnitOfWork,
+        context: TenantContext,
+        existing: DeliveryOperation,
+    ) -> DeliveryOperation:
+        if not self._is_stale_reservation(existing.submitted_at):
+            raise ResourceConflict("revision completion is already in progress")
+        recovered = replace(
+            existing,
+            submitted_by_actor_subject=context.actor_subject,
+            submitted_at=self.clock(),
+            completed_at=None,
+            correlation_id=context.correlation_id,
+            version=existing.version + 1,
+            failure_code=None,
+        )
+        repository = cast(_RecoverableDeliveryOperations, uow.delivery_operations)
+        saved = repository.takeover(recovered, expected_version=existing.version)
+        if saved is None:
+            raise ResourceConflict("revision reservation changed before stale recovery")
+        return saved
+
+    def _finalize_revision_failure(
+        self,
+        context: TenantContext,
+        project_id: UUID,
+        request_id: UUID,
+        reservation: DeliveryOperation,
+        failure_code: str,
+    ) -> None:
+        with self.uow_factory() as uow:
+            self._require_mutation(uow, context, project_id)
+            current = uow.delivery_operations.get_by_key(
+                context.organization_id,
+                context.workspace_id,
+                project_id,
+                DeliveryOperationType.COMPLETE_REVISION_REQUEST,
+                reservation.idempotency_key,
+            )
+            if current is None or current.id != reservation.id:
+                raise ResourceConflict("revision reservation changed before failure finalization")
+            if current.status is not DeliveryOperationStatus.RESERVED:
+                raise ResourceConflict("revision reservation changed before failure finalization")
+            failed = replace(
+                current,
+                status=DeliveryOperationStatus.FAILED,
+                completed_at=self.clock(),
+                version=current.version + 1,
+                failure_code=self._bounded_revision_failure_code(failure_code),
+            )
+            repository = cast(_RecoverableDeliveryOperations, uow.delivery_operations)
+            repository.finalize_failed(failed, expected_version=current.version)
+            uow.audit_events.append(
+                self._audit(
+                    context,
+                    request_id,
+                    "planning_revision.failed",
+                    {
+                        "revision_request_id": str(request_id),
+                        "operation_id": str(current.id),
+                        "error_code": failed.failure_code,
+                    },
+                )
+            )
+
+    def _is_stale_reservation(self, submitted_at: datetime) -> bool:
+        return (self.clock() - submitted_at).total_seconds() >= self.stale_reservation_age_seconds
+
+    @staticmethod
+    def _bounded_revision_failure_code(failure_code: str) -> str:
+        return failure_code if failure_code in FAILED_REVISION_OPERATION_CODES else "provider_error"
+
+    @staticmethod
+    def _validate_completion_operation_digest(operation: DeliveryOperation, digest: str) -> None:
+        if operation.request_digest != digest:
+            raise ResourceConflict(
+                "idempotency key was used for a different request", code="idempotency_conflict"
+            )
 
     def _resolve_operation(
         self,

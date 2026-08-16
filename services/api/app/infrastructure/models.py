@@ -3152,12 +3152,15 @@ class DeliveryOperationRecord(Base):
             "operation IN ('submit_planning_review', 'create_revision_request', 'complete_revision_request', 'cancel_revision_request', 'create_delivery_package', 'export_delivery_package')",
             name="ck_delivery_operation_type",
         ),
-        CheckConstraint("status IN ('reserved', 'accepted')", name="ck_delivery_operation_status"),
+        CheckConstraint(
+            "status IN ('reserved', 'accepted', 'failed')", name="ck_delivery_operation_status"
+        ),
         CheckConstraint("request_digest ~ '^[0-9a-f]{64}$'", name="ck_delivery_operation_digest"),
         CheckConstraint("version >= 1", name="ck_delivery_operation_version"),
         CheckConstraint(
-            "(status = 'reserved' AND completed_at IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR "
-            "(status = 'accepted' AND completed_at IS NOT NULL AND ((operation = 'submit_planning_review' AND outcome_review_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_revision_request' AND outcome_review_id IS NOT NULL AND outcome_revision_request_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation IN ('complete_revision_request', 'cancel_revision_request') AND outcome_revision_request_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_delivery_package' AND outcome_delivery_package_id IS NOT NULL AND outcome_delivery_package_version_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'export_delivery_package' AND outcome_export_file_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL)))",
+            "(status = 'reserved' AND completed_at IS NULL AND failure_code IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR "
+            "(status = 'accepted' AND completed_at IS NOT NULL AND failure_code IS NULL AND ((operation = 'submit_planning_review' AND outcome_review_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_revision_request' AND outcome_review_id IS NOT NULL AND outcome_revision_request_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation IN ('complete_revision_request', 'cancel_revision_request') AND outcome_revision_request_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'create_delivery_package' AND outcome_delivery_package_id IS NOT NULL AND outcome_delivery_package_version_id IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_export_file_id IS NULL) OR (operation = 'export_delivery_package' AND outcome_export_file_id IS NOT NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL))) OR "
+            "(status = 'failed' AND operation = 'complete_revision_request' AND completed_at IS NOT NULL AND failure_code IS NOT NULL AND outcome_review_id IS NULL AND outcome_revision_request_id IS NULL AND outcome_delivery_package_id IS NULL AND outcome_delivery_package_version_id IS NULL AND outcome_export_file_id IS NULL)",
             name="ck_delivery_operation_outcome",
         ),
         UniqueConstraint(
@@ -3192,6 +3195,7 @@ class DeliveryOperationRecord(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     provider_request_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    failure_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class AuditEventRecord(Base):
@@ -3218,7 +3222,7 @@ class AuditEventRecord(Base):
             "'creative_concept.failed', 'script.failed', 'storyboard.generated', "
             "'storyboard.failed', 'shot_plan.generated', 'shot_plan.failed', "
             "'planning_review.submitted', 'planning_revision.requested', "
-            "'planning_revision.completed', 'planning_revision.cancelled', "
+            "'planning_revision.completed', 'planning_revision.cancelled', 'planning_revision.failed', "
             "'delivery_package.created', 'delivery_package.exported')",
             name="ck_audit_action",
         ),

@@ -1,5 +1,7 @@
 import hashlib
+import json
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -15,6 +17,11 @@ from services.api.app.application.errors import (
     InvalidRequest,
     ResourceConflict,
     ResourceNotFound,
+)
+from services.api.app.application.model_provider import (
+    ModelRequest,
+    ProviderOutcome,
+    ProviderOutcomeStatus,
 )
 from services.api.app.application.review_revision_delivery_services import (
     ReviewRevisionDeliveryApplicationService,
@@ -303,6 +310,51 @@ class _ReservationLossUoW:
         return getattr(self._delegate, name)
 
 
+class _UoWActivity:
+    def __init__(self) -> None:
+        self.active = 0
+
+
+class _ActivityTrackingUoW:
+    def __init__(self, session_factory: SessionFactory, activity: _UoWActivity) -> None:
+        self._delegate = SqlAlchemyUnitOfWork(session_factory)
+        self._activity = activity
+
+    def __enter__(self) -> "_ActivityTrackingUoW":
+        self._delegate.__enter__()
+        self._activity.active += 1
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self._activity.active -= 1
+        self._delegate.__exit__(exc_type, exc_value, traceback)  # type: ignore[arg-type]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._delegate, name)
+
+
+class _CountingRevisionProvider:
+    provider_id = "counting-revision-provider"
+    model_id = "counting-revision-model"
+
+    def __init__(self, activity: _UoWActivity, *, fail_at_call: int | None = None) -> None:
+        self._activity = activity
+        self._fail_at_call = fail_at_call
+        self.calls: list[ModelRequest] = []
+
+    def complete(self, request: ModelRequest) -> ProviderOutcome:
+        if self._activity.active:
+            raise AssertionError("provider called while a unit of work is open")
+        self.calls.append(request)
+        if self._fail_at_call == len(self.calls):
+            return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+        payload = json.loads(request.input_text)
+        return ProviderOutcome(
+            ProviderOutcomeStatus.SUCCESS,
+            json.dumps(payload["artifact"], sort_keys=True, separators=(",", ":")),
+        )
+
+
 def test_review_revision_successor_keeps_predecessor_immutable(
     persistence_session_factory: SessionFactory,
     database_engine: Engine,
@@ -443,6 +495,252 @@ def test_completion_reservation_loser_reads_winner_state_before_returning(
     assert loser.successor_script_version_id == winner.successor_script_version_id
 
 
+def test_bundle_revision_calls_provider_outside_transactions_and_persists_atomically(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "bundle-provider", tmp_path
+    )
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.PLANNING_BUNDLE,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Revise the complete planning bundle.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="bundle-provider-review",
+    ).revision_request
+    assert request is not None
+    activity = _UoWActivity()
+    provider = _CountingRevisionProvider(activity)
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _ActivityTrackingUoW(persistence_session_factory, activity),
+        delivery.storage,
+        provider,
+    )
+
+    result = service.complete_revision(
+        seed.context,
+        seed.project_id,
+        request.id,
+        idempotency_key="bundle-provider-complete",
+    )
+
+    assert len(provider.calls) == 3
+    assert result.successor_script_version_id is not None
+    assert result.successor_storyboard_version_id is not None
+    assert result.successor_shot_plan_version_id is not None
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM planning_artifact_revision_links "
+                    "WHERE revision_request_id=:id"
+                ),
+                {"id": request.id},
+            )
+            == 3
+        )
+
+
+def test_bundle_revision_provider_failure_leaves_request_open_without_successors(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "bundle-failure", tmp_path
+    )
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.PLANNING_BUNDLE,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Fail while revising the complete planning bundle.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="bundle-failure-review",
+    ).revision_request
+    assert request is not None
+    activity = _UoWActivity()
+    provider = _CountingRevisionProvider(activity, fail_at_call=2)
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _ActivityTrackingUoW(persistence_session_factory, activity),
+        delivery.storage,
+        provider,
+    )
+
+    with pytest.raises(InvalidRequest, match="provider failed"):
+        service.complete_revision(
+            seed.context,
+            seed.project_id,
+            request.id,
+            idempotency_key="bundle-failure-complete",
+        )
+
+    assert len(provider.calls) == 2
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("SELECT status FROM planning_revision_requests WHERE id=:id"),
+                {"id": request.id},
+            )
+            == "open"
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM planning_artifact_revision_links "
+                    "WHERE revision_request_id=:id"
+                ),
+                {"id": request.id},
+            )
+            == 0
+        )
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT status FROM delivery_operations "
+                    "WHERE operation='complete_revision_request' AND idempotency_key="
+                    "'bundle-failure-complete'"
+                )
+            )
+            == "failed"
+        )
+
+
+def test_stale_bundle_revision_reservation_is_taken_over(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+) -> None:
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, "bundle-stale", tmp_path
+    )
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=ReviewArtifactType.PLANNING_BUNDLE,
+        script_version_id=graph.script_version_id,
+        storyboard_version_id=storyboard.version.id,
+        shot_plan_version_id=shot_plan.version.id,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Recover a stale planning bundle revision.",
+        requested_changes={"mode": "valid"},
+        idempotency_key="bundle-stale-review",
+    ).revision_request
+    assert request is not None
+    activity = _UoWActivity()
+    provider = _CountingRevisionProvider(activity)
+    now = [datetime(2026, 8, 16, tzinfo=UTC)]
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _ActivityTrackingUoW(persistence_session_factory, activity),
+        delivery.storage,
+        provider,
+        clock=lambda: now[0],
+        stale_reservation_age_seconds=1,
+    )
+    service._reserve_revision_completion(
+        seed.context,
+        seed.project_id,
+        request.id,
+        "valid",
+        "bundle-stale-complete",
+    )
+    now[0] += timedelta(seconds=2)
+
+    result = service.complete_revision(
+        seed.context,
+        seed.project_id,
+        request.id,
+        idempotency_key="bundle-stale-complete",
+    )
+
+    assert len(provider.calls) == 3
+    assert result.replayed is False
+    with database_engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT version FROM delivery_operations WHERE operation="
+                    "'complete_revision_request' AND idempotency_key='bundle-stale-complete'"
+                )
+            )
+            == 3
+        )
+
+
+@pytest.mark.parametrize(
+    ("artifact_type", "source_name", "successor_name"),
+    [
+        (ReviewArtifactType.SCRIPT, "script", "successor_script_version_id"),
+        (ReviewArtifactType.STORYBOARD, "storyboard", "successor_storyboard_version_id"),
+        (ReviewArtifactType.SHOT_PLAN, "shot_plan", "successor_shot_plan_version_id"),
+    ],
+)
+def test_single_artifact_revision_remains_supported(
+    persistence_session_factory: SessionFactory,
+    database_engine: Engine,
+    clean_database: None,
+    tmp_path: Path,
+    artifact_type: ReviewArtifactType,
+    source_name: str,
+    successor_name: str,
+) -> None:
+    del clean_database
+    seed, graph, storyboard, shot_plan, delivery = _prepare_graph(
+        persistence_session_factory, database_engine, f"single-{artifact_type.value}", tmp_path
+    )
+    source_ids = {
+        "script": graph.script_version_id,
+        "storyboard": storyboard.version.id,
+        "shot_plan": shot_plan.version.id,
+    }
+    request = delivery.submit_review(
+        seed.context,
+        seed.project_id,
+        artifact_type=artifact_type,
+        script_version_id=source_ids["script"] if source_name == "script" else None,
+        storyboard_version_id=source_ids["storyboard"] if source_name == "storyboard" else None,
+        shot_plan_version_id=source_ids["shot_plan"] if source_name == "shot_plan" else None,
+        outcome=PlanningReviewOutcome.REVISION_REQUESTED,
+        summary="Revise exactly one planning artifact.",
+        requested_changes={"mode": "valid"},
+        idempotency_key=f"single-{artifact_type.value}-review",
+    ).revision_request
+    assert request is not None
+    activity = _UoWActivity()
+    provider = _CountingRevisionProvider(activity)
+    service = ReviewRevisionDeliveryApplicationService(
+        lambda: _ActivityTrackingUoW(persistence_session_factory, activity),
+        delivery.storage,
+        provider,
+    )
+
+    result = service.complete_revision(
+        seed.context,
+        seed.project_id,
+        request.id,
+        idempotency_key=f"single-{artifact_type.value}-complete",
+    )
+
+    assert len(provider.calls) == 1
+    assert getattr(result, successor_name) is not None
+
+
 def test_approved_bundle_delivery_and_deterministic_export(
     persistence_session_factory: SessionFactory,
     database_engine: Engine,
@@ -495,7 +793,7 @@ def test_approved_bundle_delivery_and_deterministic_export(
     assert hashlib.sha256(payload).hexdigest() == first.file.checksum
 
 
-def test_revision_provider_failure_rolls_back_reservation_and_successor(
+def test_revision_provider_failure_records_failed_reservation_without_successor(
     persistence_session_factory: SessionFactory,
     database_engine: Engine,
     clean_database: None,
@@ -527,7 +825,16 @@ def test_revision_provider_failure_rolls_back_reservation_and_successor(
             idempotency_key="complete-rollback-1",
         )
     with database_engine.connect() as connection:
-        assert connection.scalar(text("SELECT count(*) FROM delivery_operations")) == 1
+        assert connection.scalar(text("SELECT count(*) FROM delivery_operations")) == 2
+        assert (
+            connection.scalar(
+                text(
+                    "SELECT status FROM delivery_operations WHERE operation="
+                    "'complete_revision_request' AND idempotency_key='complete-rollback-1'"
+                )
+            )
+            == "failed"
+        )
         assert (
             connection.scalar(text("SELECT count(*) FROM script_versions WHERE version_number > 1"))
             == 0
