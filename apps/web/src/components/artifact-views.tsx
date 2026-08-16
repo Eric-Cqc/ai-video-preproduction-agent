@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   ConceptCandidate,
   DeliveryExport,
@@ -8,6 +9,8 @@ import type {
   ScriptArtifact,
 } from "../lib/api/product-client";
 import { Badge } from "./ui/badge";
+import { CopyButton } from "./ui/copy-button";
+import { TruncatedValue } from "./ui/truncated-value";
 
 function truncateChecksum(checksum: string): string {
   if (checksum.length <= 18) return checksum;
@@ -118,10 +121,12 @@ export function BriefSurface({
 export function ConceptComparison({
   candidates,
   selectedId,
+  pending = false,
   onSelect,
 }: {
   candidates: readonly ConceptCandidate[];
   selectedId: string | undefined;
+  pending?: boolean;
   onSelect: (candidateId: string) => void;
 }) {
   return (
@@ -155,14 +160,21 @@ export function ConceptComparison({
               ]}
             />
             <button
-              className={
-                selected ? "button selected-button" : "button secondary"
-              }
+              className={`${selected ? "button selected-button" : "button secondary"}${pending ? " button-pending" : ""}`}
               type="button"
               aria-pressed={selected}
+              aria-busy={pending || undefined}
               onClick={() => onSelect(candidate.id)}
+              disabled={pending}
             >
-              {selected ? "已选择此 Concept" : "选择此 Concept"}
+              {pending ? (
+                <span className="button-spinner" aria-hidden="true" />
+              ) : null}
+              {pending
+                ? "选择中…"
+                : selected
+                  ? "已选择此 Concept"
+                  : "选择此 Concept"}
             </button>
             <JsonInspector label="检查原始 Concept 结构" value={content} />
           </article>
@@ -453,7 +465,18 @@ export function DeliverySurface({
         </div>
         <div className="digest-block">
           <span>Manifest digest</span>
-          <code>{deliveryPackage.manifest_digest}</code>
+          <div className="copyable-value">
+            <code
+              title={deliveryPackage.manifest_digest}
+              aria-label={`完整 Manifest digest：${deliveryPackage.manifest_digest}`}
+            >
+              {truncateChecksum(deliveryPackage.manifest_digest)}
+            </code>
+            <CopyButton
+              value={deliveryPackage.manifest_digest}
+              label="复制 digest"
+            />
+          </div>
         </div>
       </div>
       <section className="artifact-section">
@@ -508,12 +531,15 @@ export function DeliverySurface({
                 </div>
                 <div className="export-checksum">
                   <span>ZIP checksum</span>
-                  <code
-                    title={item.checksum}
-                    aria-label={`完整 ZIP checksum：${item.checksum}`}
-                  >
-                    {truncateChecksum(item.checksum)}
-                  </code>
+                  <div className="copyable-value">
+                    <code
+                      title={item.checksum}
+                      aria-label={`完整 ZIP checksum：${item.checksum}`}
+                    >
+                      {truncateChecksum(item.checksum)}
+                    </code>
+                    <CopyButton value={item.checksum} label="复制 checksum" />
+                  </div>
                 </div>
               </div>
             ))}
@@ -572,28 +598,68 @@ function IssueList({ issues }: { issues: readonly IssueLike[] }) {
   );
 }
 
-function FieldGrid({ fields }: { fields: ReadonlyArray<[string, unknown]> }) {
+function hasFieldValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === "") return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isRecord(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+function FieldGrid({
+  fields,
+  title,
+}: {
+  fields: ReadonlyArray<[string, unknown]>;
+  title?: string;
+}) {
+  const populated = fields.filter(([, value]) => hasFieldValue(value));
+  const empty = fields.filter(([, value]) => !hasFieldValue(value));
+  const [showEmpty, setShowEmpty] = useState(false);
+  const visible = showEmpty ? fields : populated;
+
   return (
-    <dl className="field-grid">
-      {fields.map(([label, value]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>
-            <DetailValue value={value} />
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="field-group">
+      <dl className="field-grid">
+        {visible.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              <DetailValue value={value} fieldLabel={label} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {empty.length > 0 ? (
+        <button
+          type="button"
+          className="text-action field-grid-toggle"
+          aria-expanded={showEmpty}
+          onClick={() => setShowEmpty((current) => !current)}
+        >
+          {showEmpty
+            ? `\u9690\u85cf ${empty.length} \u4e2a\u672a\u586b\u5199\u5b57\u6bb5`
+            : `\u663e\u793a ${empty.length} \u4e2a\u672a\u586b\u5199\u5b57\u6bb5${title ? `\uff08${title}\uff09` : ""}`}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
-function DetailValue({ value }: { value: unknown }) {
+function DetailValue({
+  value,
+  fieldLabel,
+}: {
+  value: unknown;
+  fieldLabel?: string;
+}) {
   if (Array.isArray(value)) {
     if (value.length === 0) return <span className="empty-value">未提供</span>;
     return (
       <ul className="inline-list">
         {value.map((item, index) => (
-          <li key={`${textValue(item, index)}-${index}`}>{textValue(item)}</li>
+          <li key={`${textValue(item, index)}-${index}`}>
+            <TruncatedValue value={textValue(item)} fieldLabel={fieldLabel} />
+          </li>
         ))}
       </ul>
     );
@@ -604,22 +670,23 @@ function DetailValue({ value }: { value: unknown }) {
         {Object.entries(value).map(([key, item]) => (
           <span key={key}>
             <b>{labelize(key)}：</b>
-            {textValue(item, "未提供")}
+            <TruncatedValue
+              value={textValue(item, "未提供")}
+              fieldLabel={fieldLabel}
+            />
           </span>
         ))}
       </span>
     );
   }
+  if (value === null || value === undefined || value === "") {
+    return <span className="empty-value">未提供</span>;
+  }
   return (
-    <span
-      className={
-        value === null || value === undefined || value === ""
-          ? "empty-value"
-          : undefined
-      }
-    >
-      {textValue(value, "未提供")}
-    </span>
+    <TruncatedValue
+      value={textValue(value, "未提供")}
+      fieldLabel={fieldLabel}
+    />
   );
 }
 

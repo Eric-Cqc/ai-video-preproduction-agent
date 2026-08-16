@@ -23,6 +23,7 @@ import {
   type ResumeOperationKeys,
 } from "../lib/api/product-client";
 import { ErrorPanel } from "./ui/error-panel";
+import { Button } from "./ui/button";
 import { WorkspaceStage } from "./workbench/workspace-stage";
 import {
   fromHydratedProject,
@@ -121,10 +122,6 @@ function errorFor(error: unknown): DeskError {
   if (error instanceof ApiClientError) return error;
   if (error instanceof Error) return error;
   return new Error("操作未完成。请稍后重试。");
-}
-
-function errorReason(error: unknown): string {
-  return errorFor(error).message;
 }
 
 function statusClass(state: StageState): string {
@@ -577,7 +574,10 @@ export function FoundationStatus({
   useEffect(() => {
     if (hostedPilot && !pilotReady) return;
     if (!hasTenantContext(context)) return;
-    void loadProjects();
+    const timer = window.setTimeout(() => {
+      void loadProjects();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [context, hostedPilot, loadProjects, pilotReady]);
 
   useEffect(() => {
@@ -766,7 +766,7 @@ export function FoundationStatus({
       applyWorkspace((current) => ({
         ...current,
         activeOperation: null,
-        errors: { ...current.errors, [stage]: errorReason(caught) },
+        errors: { ...current.errors, [stage]: nextError },
       }));
       setError(nextError);
       setNotice(`${stageLabel(stage)} 未完成；请查看错误详情。`);
@@ -923,6 +923,9 @@ export function FoundationStatus({
           briefRun.status === "failed" ||
           !started.candidate_available
         ) {
+          const extractionFailure = new Error(
+            "解析运行已失败；candidate_available=false，没有可审查候选。请检查源文件后重试。",
+          );
           updateResumeState(project.id, {
             conceptSelection: undefined,
             briefCandidateAvailable: false,
@@ -940,13 +943,10 @@ export function FoundationStatus({
             candidateReview: undefined,
             errors: {
               ...snapshot.errors,
-              parse:
-                "解析运行已失败；candidate_available=false，没有可审查候选。",
+              parse: extractionFailure,
             },
           }));
-          throw new Error(
-            "解析运行已失败；candidate_available=false，没有可审查候选。请检查源文件后重试。",
-          );
+          throw extractionFailure;
         }
         const candidate = await client.getBriefCandidate(
           project.id,
@@ -1635,9 +1635,13 @@ export function FoundationStatus({
                   autoComplete="current-password"
                 />
               </label>
-              <button className="button" type="submit" disabled={busy}>
-                进入试点
-              </button>
+              <Button
+                label="进入试点"
+                type="submit"
+                disabled={busy}
+                pending={busy}
+                pendingLabel="验证中…"
+              />
             </form>
           ) : null}
 
@@ -1658,12 +1662,13 @@ export function FoundationStatus({
           <p className="notice" role="status" aria-live="polite">
             {notice}
           </p>
-          {error ? (
+          {error && !workspace?.errors[activeStage] ? (
             <ErrorPanel
               error={error}
               onRefresh={refreshSelected}
               onRetry={retryLastAction}
               onNewKey={retryWithNewKey}
+              canRetry={lastAction.current !== null}
             />
           ) : null}
 
@@ -1698,13 +1703,13 @@ export function FoundationStatus({
                 placeholder="目标、受众或交付背景"
               />
             </label>
-            <button
-              className="button"
+            <Button
+              label="创建项目"
               type="submit"
               disabled={busy || !pilotReady}
-            >
-              创建项目
-            </button>
+              pending={busy && workspace?.activeOperation === null}
+              pendingLabel="创建中…"
+            />
           </form>
 
           {hydrating ? (
@@ -1744,6 +1749,10 @@ export function FoundationStatus({
               onExportDelivery={handleExportDelivery}
               onDownload={handleDownload}
               download={download}
+              onRefresh={refreshSelected}
+              onRetry={retryLastAction}
+              onNewKey={retryWithNewKey}
+              canRetry={lastAction.current !== null}
             />
           ) : (
             <div className="no-project-state">

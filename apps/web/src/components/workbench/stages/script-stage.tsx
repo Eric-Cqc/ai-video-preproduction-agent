@@ -22,9 +22,11 @@ export function ScriptStage({
           <EmptyStage message="选择一个 Concept 后，脚本生成按钮才会可用。" />
           <div className="action-row">
             <Button
-              label={busy ? "生成中…" : "生成 Script"}
+              label="生成 Script"
               onClick={onGenerateScript}
               disabled={busy || !snapshot.artifacts.selectedConceptCandidateId}
+              pending={busy}
+              pendingLabel="生成中…"
             />
           </div>
         </>

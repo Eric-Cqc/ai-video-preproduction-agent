@@ -33,15 +33,11 @@ export function ParseStage({ snapshot, busy, onParse }: ParseStageProps) {
       ) : null}
       <div className="action-row">
         <Button
-          label={
-            busy
-              ? "解析中…"
-              : snapshot.candidate
-                ? "重新执行 Parse"
-                : "开始 Parse"
-          }
+          label={snapshot.candidate ? "重新执行 Parse" : "开始 Parse"}
           onClick={onParse}
           disabled={busy || !snapshot.sourceObject}
+          pending={busy}
+          pendingLabel="解析中…"
         />
       </div>
       {snapshot.candidate ? (

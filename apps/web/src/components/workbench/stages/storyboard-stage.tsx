@@ -22,9 +22,11 @@ export function StoryboardStage({
           <EmptyStage message="Script 版本就绪后，显式生成 Storyboard。" />
           <div className="action-row">
             <Button
-              label={busy ? "生成中…" : "生成 Storyboard"}
+              label="生成 Storyboard"
               onClick={onGenerateStoryboard}
               disabled={busy || !snapshot.script}
+              pending={busy}
+              pendingLabel="生成中…"
             />
           </div>
         </>

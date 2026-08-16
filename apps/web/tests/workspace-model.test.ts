@@ -192,7 +192,7 @@ describe("workspace stage state machine", () => {
 
   it("keeps a failed stage failed and does not mark later gates complete", () => {
     const snapshot = withWorkspacePatch(baseSnapshot(), {
-      errors: { brief: "candidate rejected" },
+      errors: { brief: new Error("candidate rejected") },
       briefCandidateAvailable: false,
     });
     expect(stageStatuses(snapshot)).toMatchObject({
