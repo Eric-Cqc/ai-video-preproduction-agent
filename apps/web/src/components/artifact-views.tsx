@@ -7,6 +7,7 @@ import type {
   PlanningVersion,
   ScriptArtifact,
 } from "../lib/api/product-client";
+import { Badge } from "./ui/badge";
 
 interface BriefSurfaceProps {
   content: JsonRecord;
@@ -89,9 +90,7 @@ export function BriefSurface({
   return (
     <div className="artifact-surface brief-surface">
       <div className="artifact-badge-row">
-        <span className="artifact-badge">
-          {candidate ? "候选" : "已接受版本"}
-        </span>
+        <Badge>{candidate ? "候选" : "已接受版本"}</Badge>
         <span className="artifact-muted">Structured Brief v1</span>
       </div>
       {groups.map((group) => (
@@ -175,9 +174,7 @@ export function ScriptSurface({ script }: { script: ScriptArtifact }) {
     <div className="artifact-surface reading-surface">
       <div className="reading-header">
         <div>
-          <span className="artifact-badge">
-            Script v{String(content.schema_version ?? "1")}
-          </span>
+          <Badge>Script v{String(content.schema_version ?? "1")}</Badge>
           <h3>{textValue(content.title, "未命名脚本")}</h3>
           <p>{textValue(content.logline)}</p>
         </div>
@@ -256,9 +253,7 @@ export function StoryboardSurface({
   return (
     <div className="artifact-surface storyboard-surface">
       <div className="artifact-badge-row">
-        <span className="artifact-badge">
-          Storyboard v{storyboard.version_number}
-        </span>
+        <Badge>Storyboard v{storyboard.version_number}</Badge>
         <span className="artifact-muted">
           {storyboard.scene_count} 个场景 · {storyboard.total_duration_seconds}{" "}
           秒
@@ -310,9 +305,7 @@ export function ShotPlanSurface({ shotPlan }: { shotPlan: PlanningVersion }) {
   return (
     <div className="artifact-surface shot-plan-surface">
       <div className="artifact-badge-row">
-        <span className="artifact-badge">
-          Shot Plan v{shotPlan.version_number}
-        </span>
+        <Badge>Shot Plan v{shotPlan.version_number}</Badge>
         <span className="artifact-muted">
           {shotPlan.shot_count ?? shots.length} 个镜头 ·{" "}
           {shotPlan.total_duration_seconds} 秒
@@ -391,7 +384,7 @@ export function ReviewSurface({
     <div className="review-surface">
       <div className="bundle-strip">
         <div>
-          <span className="artifact-badge">Planning bundle</span>
+          <Badge>Planning bundle</Badge>
           <h3>{review ? review.outcome : "等待制作人决定"}</h3>
           <p>
             {review?.summary ??
@@ -449,9 +442,7 @@ export function DeliverySurface({
     <div className="artifact-surface delivery-surface">
       <div className="delivery-heading">
         <div>
-          <span className="artifact-badge">
-            {deliveryPackage.manifest_schema_version}
-          </span>
+          <Badge>{deliveryPackage.manifest_schema_version}</Badge>
           <h3>交付包 v{deliveryPackage.version_number}</h3>
           <p>已绑定精确的 Script、Storyboard、Shot Plan 与批准记录。</p>
         </div>
