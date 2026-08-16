@@ -68,7 +68,7 @@ export interface WorkspaceSnapshot {
   deliveryPackage: DeliveryPackage | undefined;
   exports: DeliveryExport[];
   hydrationIssues: ApiClientError[];
-  errors: Partial<Record<StageId, string>>;
+  errors: Partial<Record<StageId, ApiClientError | Error>>;
   activeOperation: StageId | null;
   hasSourceFile: boolean;
 }

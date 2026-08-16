@@ -488,6 +488,20 @@ pre {
   font-size: 0.7rem;
 }
 
+.error-panel-warning {
+  border-color: var(--warning-border);
+  border-left-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.error-panel-warning h3 {
+  color: var(--warning);
+}
+
+.error-panel-warning p {
+  color: var(--text-strong);
+}
+
 .error-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1750,6 +1764,124 @@ h4,
 .button:active:not(:disabled) {
   transform: translateY(0.08rem);
   box-shadow: 0 0.08rem 0 var(--primary-hover);
+}
+
+.button-pending {
+  cursor: progress;
+}
+
+.button-spinner {
+  display: inline-block;
+  width: 0.78rem;
+  height: 0.78rem;
+  flex: 0 0 auto;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: orbit 0.8s linear infinite;
+}
+
+.button-pending,
+.copyable-value,
+.mutation-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mutation-pending {
+  width: 100%;
+  margin-top: 0.9rem;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.mutation-pending-bar {
+  width: min(9rem, 28%);
+  height: 0.32rem;
+  margin-left: auto;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(37 99 235 / 16%);
+}
+
+.mutation-pending-bar::after {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  content: "";
+  animation: pending-progress 1.05s var(--ease-standard) infinite;
+}
+
+@keyframes pending-progress {
+  from {
+    transform: translateX(-115%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.copyable-value {
+  max-width: 100%;
+}
+
+.copyable-value code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.copy-button,
+.text-action {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+  cursor: pointer;
+}
+
+.copy-button:hover,
+.text-action:hover {
+  color: var(--primary-hover);
+}
+
+.copy-button:focus-visible,
+.text-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.truncated-value {
+  display: inline;
+  overflow-wrap: anywhere;
+}
+
+.truncated-value .text-action {
+  margin-left: 0.35rem;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field-grid-toggle {
+  align-self: flex-start;
+  margin-top: var(--space-1);
 }
 
 .button.secondary {

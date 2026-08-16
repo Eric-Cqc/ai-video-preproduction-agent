@@ -10,7 +10,9 @@ import {
   type StageId,
   type StageState,
 } from "../../lib/workspace-model";
+import { ErrorPanel } from "../ui/error-panel";
 import { BriefStage } from "./stages/brief-stage";
+import { MutationPending } from "../ui/mutation-pending";
 import { ConceptsStage } from "./stages/concepts-stage";
 import { DeliveryStage } from "./stages/delivery-stage";
 import { ParseStage } from "./stages/parse-stage";
@@ -27,9 +29,17 @@ function statusClass(state: StageState): string {
 
 export function WorkspaceStage({
   activeStage,
+  onRefresh,
+  onRetry,
+  onNewKey,
+  canRetry,
   ...stageProps
 }: StageProps & {
   activeStage: StageId;
+  onRefresh: () => void;
+  onRetry: () => void;
+  onNewKey: () => void;
+  canRetry: boolean;
 }) {
   const state = stageStatuses(stageProps.snapshot)[activeStage];
   const stage =
@@ -61,10 +71,16 @@ export function WorkspaceStage({
         <span className={statusClass(state)}>{stateLabel(state)}</span>
       </div>
       {stageProps.snapshot.errors[activeStage] ? (
-        <div className="stage-failure" role="status">
-          <strong>阶段失败</strong>
-          <p>{stageProps.snapshot.errors[activeStage]}</p>
-        </div>
+        <ErrorPanel
+          error={stageProps.snapshot.errors[activeStage]}
+          onRefresh={onRefresh}
+          onRetry={onRetry}
+          onNewKey={onNewKey}
+          canRetry={canRetry}
+        />
+      ) : null}
+      {stageProps.snapshot.activeOperation === activeStage ? (
+        <MutationPending stage={activeStage} />
       ) : null}
       {stageContent[activeStage]}
     </section>

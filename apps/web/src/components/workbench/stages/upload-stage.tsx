@@ -1,4 +1,5 @@
 import { Button } from "../../ui/button";
+import { CopyButton } from "../../ui/copy-button";
 import { Panel } from "../../ui/panel";
 import type { StageProps } from "./stage-props";
 
@@ -48,9 +49,11 @@ export function UploadStage({
       </label>
       <div className="action-row">
         <Button
-          label={busy ? "登记中…" : "登记并上传源文件"}
+          label="登记并上传源文件"
           onClick={onUpload}
           disabled={busy || !sourceFile}
+          pending={busy}
+          pendingLabel="登记中…"
         />
       </div>
       {snapshot.sourceAsset ? (
@@ -62,14 +65,20 @@ export function UploadStage({
           <div>
             <dt>Checksum</dt>
             <dd>
-              <code
-                title={snapshot.sourceAsset.current_version.checksum_value}
-                aria-label={`完整 Checksum：${snapshot.sourceAsset.current_version.checksum_value}`}
-              >
-                {truncateChecksum(
-                  snapshot.sourceAsset.current_version.checksum_value,
-                )}
-              </code>
+              <div className="copyable-value">
+                <code
+                  title={snapshot.sourceAsset.current_version.checksum_value}
+                  aria-label={`完整 Checksum：${snapshot.sourceAsset.current_version.checksum_value}`}
+                >
+                  {truncateChecksum(
+                    snapshot.sourceAsset.current_version.checksum_value,
+                  )}
+                </code>
+                <CopyButton
+                  value={snapshot.sourceAsset.current_version.checksum_value}
+                  label="复制 checksum"
+                />
+              </div>
             </dd>
           </div>
           <div>

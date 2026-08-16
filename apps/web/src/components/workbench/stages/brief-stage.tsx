@@ -102,9 +102,11 @@ export function BriefStage({
               <h4>接受候选</h4>
               <p>接受后会创建版本化 Brief，保留当前候选的审查记录。</p>
               <Button
-                label={busy ? "接受中…" : "接受 Brief 候选"}
+                label="接受 Brief 候选"
                 onClick={onAccept}
                 disabled={busy}
+                pending={busy}
+                pendingLabel="接受中…"
               />
             </div>
             <div>
@@ -133,9 +135,11 @@ export function BriefStage({
                 />
               </label>
               <Button
-                label={busy ? "拒绝中…" : "拒绝 Brief 候选"}
+                label="拒绝 Brief 候选"
                 onClick={onReject}
                 disabled={busy}
+                pending={busy}
+                pendingLabel="拒绝中…"
                 tone="warning"
               />
             </div>

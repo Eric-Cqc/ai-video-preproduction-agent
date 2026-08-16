@@ -74,14 +74,18 @@ export function ReviewStage({
           </dl>
           <div className="action-row">
             <Button
-              label={busy ? "完成中…" : "完成修改并创建 successor 版本"}
+              label="完成修改并创建 successor 版本"
               onClick={onCompleteRevision}
               disabled={busy}
+              pending={busy}
+              pendingLabel="完成中…"
             />
             <Button
-              label={busy ? "处理中…" : "取消修改请求"}
+              label="取消修改请求"
               onClick={onCancelRevision}
               disabled={busy}
+              pending={busy}
+              pendingLabel="处理中…"
               tone="warning"
             />
           </div>
@@ -114,7 +118,7 @@ export function ReviewStage({
               <h4>批准规划包</h4>
               <p>批准会记录当前三个版本的精确 lineage，并解锁 Delivery。</p>
               <Button
-                label={busy ? "提交中…" : "批准 Planning bundle"}
+                label="批准 Planning bundle"
                 onClick={onApprove}
                 disabled={
                   busy ||
@@ -123,6 +127,8 @@ export function ReviewStage({
                   !snapshot.shotPlan ||
                   !reviewSummary.trim()
                 }
+                pending={busy}
+                pendingLabel="提交中…"
               />
             </div>
             <div>
@@ -140,7 +146,7 @@ export function ReviewStage({
                 />
               </label>
               <Button
-                label={busy ? "提交中…" : "请求修改"}
+                label="请求修改"
                 onClick={onRequestChanges}
                 disabled={
                   busy ||
@@ -150,6 +156,8 @@ export function ReviewStage({
                   !reviewChanges.trim()
                 }
                 tone="warning"
+                pending={busy}
+                pendingLabel="提交中…"
               />
             </div>
           </div>

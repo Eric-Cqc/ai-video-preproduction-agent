@@ -30,6 +30,7 @@ export function ConceptsStage({
           <ConceptComparison
             candidates={snapshot.concepts}
             selectedId={snapshot.artifacts.selectedConceptCandidateId}
+            pending={busy}
             onSelect={onSelectConcept}
           />
         </>
@@ -38,9 +39,11 @@ export function ConceptsStage({
           <EmptyStage message="Brief 接受后，显式生成三个 Concept 候选。" />
           <div className="action-row">
             <Button
-              label={busy ? "生成中…" : "生成 Concept 候选"}
+              label="生成 Concept 候选"
               onClick={onGenerateConcepts}
               disabled={busy || !snapshot.brief}
+              pending={busy}
+              pendingLabel="生成中…"
             />
           </div>
         </>

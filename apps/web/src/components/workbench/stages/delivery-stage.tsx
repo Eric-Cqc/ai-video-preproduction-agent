@@ -32,26 +32,34 @@ export function DeliveryStage({
       <div className="delivery-actions">
         {!snapshot.deliveryPackage ? (
           <Button
-            label={busy ? "创建中…" : "创建交付包"}
+            label="创建交付包"
             onClick={onCreateDelivery}
             disabled={busy || latest?.outcome !== "approved"}
+            pending={busy}
+            pendingLabel="创建中…"
           />
         ) : (
           <>
             <Button
-              label={busy ? "生成中…" : "生成 ZIP 导出"}
+              label="生成 ZIP 导出"
               onClick={onExportDelivery}
               disabled={busy || latest?.outcome !== "approved"}
+              pending={busy}
+              pendingLabel="生成中…"
             />
             {snapshot.exports.map((item) => (
               <button
-                className="button secondary download-button"
+                className={`button secondary download-button${busy ? " button-pending" : ""}`}
                 type="button"
                 key={item.id}
                 onClick={() => onDownload(item.id, item.filename)}
                 disabled={busy}
+                aria-busy={busy || undefined}
               >
-                下载 {item.filename}
+                {busy ? (
+                  <span className="button-spinner" aria-hidden="true" />
+                ) : null}
+                {busy ? "准备下载中…" : `下载 ${item.filename}`}
               </button>
             ))}
             {download ? (

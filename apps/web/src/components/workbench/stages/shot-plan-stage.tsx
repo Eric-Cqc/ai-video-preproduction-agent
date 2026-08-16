@@ -22,9 +22,11 @@ export function ShotPlanStage({
           <EmptyStage message="Storyboard 版本就绪后，显式生成 Shot Plan。" />
           <div className="action-row">
             <Button
-              label={busy ? "生成中…" : "生成 Shot Plan"}
+              label="生成 Shot Plan"
               onClick={onGenerateShotPlan}
               disabled={busy || !snapshot.storyboard}
+              pending={busy}
+              pendingLabel="生成中…"
             />
           </div>
         </>
