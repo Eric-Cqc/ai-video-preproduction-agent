@@ -27,6 +27,7 @@ class BriefVersionLifecycle(StrEnum):
 class BriefSourceType(StrEnum):
     MANUAL = "manual"
     IMPORTED_STRUCTURED = "imported_structured"
+    IDEA_INTAKE = "idea_intake"
 
 
 class RequirementIssueType(StrEnum):

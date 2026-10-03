@@ -1,5 +1,6 @@
 import json
 import math
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -299,69 +300,194 @@ class DeterministicWorkflowProvider:
     """Local-only provider supporting the complete structured fixture workflow."""
 
     provider_id = "fixture_workflow"
-    model_id = "fixture-workflow-v1"
+    model_id = "fixture-workflow-v2"
 
     def complete(self, request: ModelRequest) -> ProviderOutcome:
         if request.allow_tools:
             return ProviderOutcome(ProviderOutcomeStatus.ERROR)
         if request.instruction_template_id == "structured_brief_from_extraction":
             return ProviderOutcome(ProviderOutcomeStatus.SUCCESS, request.input_text)
-        if request.instruction_template_id == "creative_concepts_from_brief":
-            concept = {
-                "schema_version": "1.0.0",
-                "title": "Everyday clarity",
-                "one_line_idea": "A simple daily moment becomes clearer.",
-                "strategic_rationale": "Connect the benefit to a familiar use case.",
-                "target_audience_insight": "Busy audiences value confidence.",
-                "emotional_tone": "Warm and assured",
-                "visual_world": "Natural light and uncluttered spaces",
-                "narrative_arc": "Problem, clarity, confident action",
-                "key_message": "Make the next choice easier.",
-                "channel_fit": ["social"],
-                "risks": [],
-                "assumptions": [],
-            }
-            concepts = [dict(concept, title=f"Everyday clarity {index}") for index in range(1, 4)]
-            return ProviderOutcome(
-                ProviderOutcomeStatus.SUCCESS,
-                json.dumps(concepts, sort_keys=True, separators=(",", ":")),
+        if request.instruction_template_id == "idea_intake_structuring":
+            idea = request.input_text.strip()
+            lowered = idea.lower()
+            platform = (
+                "Xiaohongshu"
+                if "xiaohongshu" in lowered or "小红书" in idea
+                else "TikTok"
+                if "tiktok" in lowered
+                else None
             )
-        if request.instruction_template_id == "script_from_selected_concept":
-            script = {
-                "schema_version": "1.0.0",
-                "title": "Everyday clarity",
-                "logline": "One clear choice changes a day.",
-                "target_duration_seconds": 10,
-                "language": "en",
-                "format": "social",
-                "sections": ["opening"],
-                "scenes": [
-                    {
-                        "scene_number": 1,
-                        "purpose": "Introduce the moment",
-                        "estimated_duration_seconds": 10,
-                        "setting": "Home",
-                        "action": "A person pauses",
-                        "voiceover": "Choose clarity.",
-                        "dialogue": "",
-                        "on_screen_text": "Clarity",
-                        "transition": "cut",
-                    }
-                ],
-                "voiceover": "Choose clarity.",
-                "dialogue": "",
-                "on_screen_text": ["Clarity"],
-                "music_direction": "Warm",
-                "sound_direction": "Soft",
-                "call_to_action": "Learn more",
-                "compliance_notes": [],
-                "unresolved_assumptions": [],
-            }
+            matched = re.search(r"(?<!\d)(1[5-9]|[2-5]\d|60)\s*(?:秒|seconds?\b|s\b)", lowered)
+            duration = int(matched.group(1)) if matched else None
+            audience = "young office workers" if "office" in lowered or "白领" in idea else None
             return ProviderOutcome(
                 ProviderOutcomeStatus.SUCCESS,
-                json.dumps(script, sort_keys=True, separators=(",", ":")),
+                json.dumps(
+                    {
+                        "objective": idea[:500],
+                        "platform": platform,
+                        "audience": audience,
+                        "duration_seconds": duration,
+                        "content_type": "short-form video",
+                        "tone": ["cinematic"] if "cinematic" in lowered else [],
+                        "key_messages": [idea[:200]],
+                        "call_to_action": None,
+                        "constraints": [],
+                        "must_include": [],
+                        "must_avoid": [],
+                        "assumptions": ["离线规则整理；未知事实仍需制作人确认。"],
+                        "missing_fields": ["call_to_action"]
+                        if platform is not None
+                        else ["platform"],
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        if request.instruction_template_id in {
+            "creative_concepts_from_brief",
+            "script_from_selected_concept",
+        }:
+            try:
+                data = json.loads(request.input_text)
+            except json.JSONDecodeError:
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            if not isinstance(data, dict):
+                return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+            output = (
+                _offline_concepts(data)
+                if request.instruction_template_id == "creative_concepts_from_brief"
+                else _offline_script(data)
+            )
+            return ProviderOutcome(
+                ProviderOutcomeStatus.SUCCESS,
+                json.dumps(output, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
             )
         return ProviderOutcome(ProviderOutcomeStatus.ERROR)
+
+
+def _brief_value(brief: dict[str, object], group: str, field: str, fallback: str) -> str:
+    section = brief.get(group)
+    value = section.get(field) if isinstance(section, dict) else None
+    return value[:500] if isinstance(value, str) and value.strip() else fallback
+
+
+def _offline_concepts(brief: dict[str, object]) -> list[dict[str, object]]:
+    goal = _brief_value(brief, "objective", "primary_goal", "传达一个明确的制作目标")
+    message = _brief_value(brief, "creative_constraints", "required_message", goal)
+    audience = _brief_value(brief, "audience", "primary_audience", "目标受众待确认")
+    channels = brief.get("channels")
+    directions = [
+        (
+            "日常观察",
+            "以一个熟悉的日常时刻建立共鸣。",
+            "先让观众认出自己的日常，再传达核心信息。",
+            "环境 → 日常动作 → 行动邀请",
+            "自然光、环境建立镜头、克制的观察视角",
+        ),
+        (
+            "细节叙事",
+            "用三个可拍摄的细节，把核心信息变得具体。",
+            "从细节与过程切入，减少抽象说明，保留真实质感。",
+            "细节开场 → 过程展开 → 信息落点",
+            "近景、动作匹配、清晰的材质与声音线索",
+        ),
+        (
+            "人物视角",
+            "跟随一个人物的短旅程，建立情绪与行动的连接。",
+            "以人物的观察和选择组织信息，避免没有依据的效果承诺。",
+            "人物出场 → 体验与观察 → 明确邀请",
+            "视线匹配、空间连续性、平视镜头",
+        ),
+    ]
+    return [
+        {
+            "schema_version": "1.0.0",
+            "title": title,
+            "one_line_idea": f"{idea} 目标：{goal}"[:500],
+            "strategic_rationale": rationale,
+            "target_audience_insight": f"Brief 声明的受众：{audience}。动机与反馈尚未验证。"[:1000],
+            "emotional_tone": "真实、克制、清晰（模板建议，待确认）",
+            "visual_world": visual,
+            "narrative_arc": arc,
+            "key_message": message,
+            "channel_fit": channels if isinstance(channels, list) and channels else ["social"],
+            "risks": ["场地、人物、素材权利与实际可拍性尚未核实。"],
+            "assumptions": ["确定性离线模板建议；非真实模型生成，非观众测试结论。"],
+        }
+        for title, idea, rationale, arc, visual in directions
+    ]
+
+
+def _offline_script(data: dict[str, object]) -> dict[str, object]:
+    concept = data.get("concept")
+    brief = data.get("brief")
+    if not isinstance(concept, dict):
+        concept = data
+    if not isinstance(brief, dict):
+        brief = {}
+    deliverables = brief.get("deliverables")
+    durations = deliverables.get("duration_seconds") if isinstance(deliverables, dict) else None
+    duration = durations[0] if isinstance(durations, list) and durations else 30
+    if not isinstance(duration, int) or not 15 <= duration <= 60:
+        duration = 30
+    goal = _brief_value(brief, "objective", "primary_goal", "制作目标待确认")
+    message = _brief_value(brief, "creative_constraints", "required_message", goal)
+    cta = _brief_value(brief, "creative_constraints", "call_to_action", "行动号召待确认")
+    languages = brief.get("audience")
+    languages = languages.get("language") if isinstance(languages, dict) else None
+    language = languages[0] if isinstance(languages, list) and languages else "zh-CN"
+    channels = brief.get("channels")
+    script_format = channels[0] if isinstance(channels, list) and channels else "social"
+    title = str(concept.get("title", "离线制作脚本"))[:160]
+    detail = title == "细节叙事"
+    durations_by_scene = [duration // 5, duration * 3 // 5]
+    durations_by_scene.append(duration - sum(durations_by_scene))
+    actions = (
+        [
+            "从一个可辨认的物件或动作细节开场，保留现场声音。",
+            "用两组过程细节衔接核心信息；具体素材由制作人确认。",
+            "回到完整环境，留出清晰的文字落点与行动邀请。",
+        ]
+        if detail
+        else [
+            "建立日常环境与人物，给观众一个能理解的起点。",
+            "跟随一段连续动作，传达 Brief 的关键信息。",
+            "以人物或环境收束，明确提出行动邀请。",
+        ]
+    )
+    scenes = [
+        {
+            "scene_number": index + 1,
+            "purpose": purpose,
+            "estimated_duration_seconds": durations_by_scene[index],
+            "setting": "场地待确认",
+            "action": actions[index],
+            "voiceover": ["", message, cta][index],
+            "dialogue": "",
+            "on_screen_text": ["", message[:300], cta[:300]][index],
+            "transition": "cut",
+        }
+        for index, purpose in enumerate(["建立关注", "展开核心信息", "收束与邀请"])
+    ]
+    return {
+        "schema_version": "1.0.0",
+        "title": title,
+        "logline": goal[:500],
+        "target_duration_seconds": duration,
+        "language": language,
+        "format": script_format,
+        "sections": ["opening", "development", "closing"],
+        "scenes": scenes,
+        "voiceover": message,
+        "dialogue": "",
+        "on_screen_text": [message[:300], cta[:300]],
+        "music_direction": "克制的节奏；音乐授权待确认。",
+        "sound_direction": "优先收录动作与环境的真实声音。",
+        "call_to_action": cta,
+        "compliance_notes": ["场地、人物与素材权利尚未核实；不加入未证实的功效或事实。"],
+        "unresolved_assumptions": ["确定性模板脚本，逐场内容与可拍性需要人工审查。"],
+    }
 
 
 STORYBOARD_PROVIDER_MODES = frozenset(

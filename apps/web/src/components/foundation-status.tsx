@@ -24,6 +24,13 @@ import {
 } from "../lib/api/product-client";
 import { ErrorPanel } from "./ui/error-panel";
 import { Button } from "./ui/button";
+import {
+  createIdeaIntakeClient,
+  type IdeaEdits,
+} from "../lib/api/idea-intake-client";
+import { IdeaComposer, IdeaBriefEditor } from "./workbench/idea-intake";
+import { ArtifactLibrary } from "./workbench/artifact-library";
+import { UploadStage } from "./workbench/stages/upload-stage";
 import { WorkspaceStage } from "./workbench/workspace-stage";
 import {
   fromHydratedProject,
@@ -139,7 +146,16 @@ function StageRail({
 }) {
   const statuses = snapshot ? stageStatuses(snapshot) : undefined;
   const [isExpanded, setIsExpanded] = useState(false);
-  const activeStageDefinition = stageDefinitions.find(
+  const stages = snapshot?.ideaIntake
+    ? stageDefinitions
+        .filter((stage) => stage.id !== "parse")
+        .map((stage, index) => ({
+          ...stage,
+          label: stage.id === "upload" ? "Idea" : stage.label,
+          index: String(index + 1).padStart(2, "0"),
+        }))
+    : stageDefinitions;
+  const activeStageDefinition = stages.find(
     (stage) => stage.id === activeStage,
   );
   return (
@@ -166,7 +182,7 @@ function StageRail({
         <p className="rail-empty">选择项目后载入真实阶段状态。</p>
       ) : null}
       <ol className="stage-list" id="production-stage-list">
-        {stageDefinitions.map((stage) => {
+        {stages.map((stage) => {
           const state = statuses?.[stage.id] ?? "blocked";
           return (
             <li
@@ -316,6 +332,11 @@ export function FoundationStatus({
     [apiBaseUrl, context, hostedPilot],
   );
 
+  const intakeClient = useMemo(
+    () => createIdeaIntakeClient(apiBaseUrl, context, !hostedPilot),
+    [apiBaseUrl, context, hostedPilot],
+  );
+
   const clearDownload = useCallback(() => {
     setDownload((current) => {
       if (current && typeof URL !== "undefined" && URL.revokeObjectURL)
@@ -417,71 +438,85 @@ export function FoundationStatus({
       setHydrating(true);
       setBusy(true);
       try {
-        let resumeState: ResumeOperationKeys = {};
-        try {
-          resumeState = readResumeOperationKeys(
-            window.localStorage,
-            operationStorageKey(context, project.id),
-          );
-        } catch {
-          resumeState = {};
-        }
         const hydrated = await client.hydrateProject(project.id, artifactIds);
         let resumed = hydrated;
-        if (
-          hydrated.conceptRun &&
-          hydrated.artifacts.selectedConceptCandidateId &&
-          hydrated.concepts.some(
-            (candidate) =>
-              candidate.id === hydrated.artifacts.selectedConceptCandidateId,
-          )
-        ) {
-          let selectionKey = resumeState.conceptSelection;
-          selectionKey ??= createOperationKey(
-            `${project.id}:concepts:resume-selection`,
-          );
+        if (hydrated.conceptRun) {
+          updateResumeState(project.id, { conceptSelection: undefined });
+          const cleaned = { ...hydrated.artifacts };
+          delete cleaned.selectedConceptCandidateId;
+          delete cleaned.conceptSelectionId;
+          resumed = { ...hydrated, artifacts: cleaned };
           try {
-            const selection = await client.selectConcept({
-              projectId: project.id,
-              conceptRunId: hydrated.conceptRun.id,
-              candidateId: hydrated.artifacts.selectedConceptCandidateId,
-              idempotencyKey: selectionKey,
-            });
-            resumed = {
-              ...hydrated,
-              artifacts: {
-                ...hydrated.artifacts,
-                selectedConceptCandidateId: selection.candidate_id,
-                conceptSelectionId: selection.selection_id,
-              },
-            };
-            try {
-              updateResumeState(project.id, { conceptSelection: selectionKey });
-            } catch {
-              // The selection remains API-backed when browser storage is unavailable.
+            const selection = await intakeClient.readSelection(
+              project.id,
+              hydrated.conceptRun.id,
+            );
+            if (
+              selection &&
+              hydrated.concepts.some(
+                (candidate) => candidate.id === selection.candidate_id,
+              )
+            ) {
+              resumed = {
+                ...resumed,
+                artifacts: {
+                  ...cleaned,
+                  selectedConceptCandidateId: selection.candidate_id,
+                  conceptSelectionId: selection.selection_id,
+                },
+              };
             }
           } catch (caught) {
             const selectionError = errorFor(caught);
-            const cleanedArtifacts = { ...hydrated.artifacts };
-            delete cleanedArtifacts.selectedConceptCandidateId;
-            delete cleanedArtifacts.conceptSelectionId;
             resumed = {
-              ...hydrated,
-              artifacts: cleanedArtifacts,
+              ...resumed,
               issues: [
-                ...hydrated.issues,
+                ...resumed.issues,
                 selectionError instanceof ApiClientError
                   ? selectionError
-                  : new ApiClientError(0, {
-                      message: selectionError.message,
-                    }),
+                  : new ApiClientError(0, { message: selectionError.message }),
               ],
             };
-            updateResumeState(project.id, { conceptSelection: undefined });
           }
         }
         if (!isCurrentRequest()) return;
-        const next = fromHydratedProject(resumed);
+        const intakes = await intakeClient.list(project.id).catch((caught) => {
+          const intakeError = errorFor(caught);
+          resumed = {
+            ...resumed,
+            issues: [
+              ...resumed.issues,
+              intakeError instanceof ApiClientError
+                ? intakeError
+                : new ApiClientError(0, { message: intakeError.message }),
+            ],
+          };
+          return { items: [] };
+        });
+        if (!isCurrentRequest()) return;
+        const intake =
+          intakes.items.find(
+            (item) => item.brief_id === resumed.brief?.brief.id,
+          ) ?? intakes.items[0];
+        if (
+          intake?.status === "confirmed" &&
+          !resumed.brief &&
+          intake.brief_id
+        ) {
+          resumed = {
+            ...resumed,
+            brief: await client.getBrief(project.id, intake.brief_id),
+            artifacts: {
+              ...resumed.artifacts,
+              briefId: intake.brief_id,
+              ...(intake.brief_version_id
+                ? { briefVersionId: intake.brief_version_id }
+                : {}),
+            },
+          };
+        }
+        if (!isCurrentRequest()) return;
+        const next = { ...fromHydratedProject(resumed), ideaIntake: intake };
         setWorkspace(next);
         try {
           writeArtifactIds(
@@ -512,7 +547,7 @@ export function FoundationStatus({
         }
       }
     },
-    [client, context, updateResumeState],
+    [client, intakeClient, context, updateResumeState],
   );
 
   const selectProject = useCallback(
@@ -730,7 +765,7 @@ export function FoundationStatus({
       setProjectName("");
       setProjectDescription("");
       await selectProject(project);
-      setNotice("项目已创建。请从 Upload 开始登记制作输入。");
+      setNotice("项目已创建。输入创作想法，或导入已有 Brief。");
     } catch (caught) {
       setError(errorFor(caught));
       setNotice("项目创建未完成。");
@@ -806,6 +841,58 @@ export function FoundationStatus({
         }
       }
     }
+  }
+
+  function handleCreateIdea(idea: string) {
+    const project = selected;
+    if (!project) return;
+    void runStage("upload", "idea", async (_key, isCurrent, applyWorkspace) => {
+      // Recover a lost create response through the server list before creating again.
+      const existing = (await intakeClient.list(project.id)).items.find(
+        (item) => item.raw_idea === idea && item.status === "structured",
+      );
+      const intake = existing ?? (await intakeClient.create(project.id, idea));
+      applyWorkspace((current) => ({ ...current, ideaIntake: intake }));
+      setActiveStageIfCurrent("brief", isCurrent);
+    });
+  }
+
+  function handleSaveIdea(edits: IdeaEdits) {
+    const project = selected;
+    const intake = workspace?.ideaIntake;
+    if (!project || !intake) return;
+    void runStage(
+      "brief",
+      "idea-save",
+      async (_key, _isCurrent, applyWorkspace) => {
+        const updated = await intakeClient.update(project.id, intake, edits);
+        applyWorkspace((current) => ({ ...current, ideaIntake: updated }));
+      },
+    );
+  }
+
+  function handleConfirmIdea() {
+    const project = selected;
+    const intake = workspace?.ideaIntake;
+    if (!project || !intake) return;
+    void runStage(
+      "brief",
+      "idea-confirm",
+      async (_key, isCurrent, applyWorkspace) => {
+        const confirmed = await intakeClient.confirm(project.id, intake);
+        applyWorkspace((current) => ({
+          ...current,
+          ideaIntake: confirmed.idea_intake,
+          brief: confirmed.result,
+          artifacts: {
+            ...current.artifacts,
+            briefId: confirmed.result.brief.id,
+            briefVersionId: confirmed.result.current_version.id,
+          },
+        }));
+        setActiveStageIfCurrent("concepts", isCurrent);
+      },
+    );
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1608,7 +1695,7 @@ export function FoundationStatus({
           <p className="eyebrow">AI VIDEO PREPRODUCTION AGENT</p>
           <h1>Production Desk</h1>
           <p className="masthead-subtitle">
-            把 Brief 变成可审查、可交接的制作蓝图。
+            让想法逐步成为可审查、可交接的制作蓝图。
           </p>
         </div>
         <div className="system-state" aria-live="polite">
@@ -1620,7 +1707,7 @@ export function FoundationStatus({
             }
           />
           {api.state === "available"
-            ? `本地 API 已连接 · ${environment}`
+            ? `${hostedPilot ? "服务端试点模式" : "本地开发模式"} · API 已连接`
             : "本地 API 未连接"}
         </div>
       </header>
@@ -1690,7 +1777,10 @@ export function FoundationStatus({
           <p className="notice" role="status" aria-live="polite">
             {notice}
           </p>
-          {error && !workspace?.errors[activeStage] ? (
+          {error &&
+          (!workspace?.errors[activeStage] ||
+            Boolean(workspace.ideaIntake) ||
+            activeStage === "upload") ? (
             <ErrorPanel
               error={error}
               onRefresh={refreshSelected}
@@ -1711,34 +1801,39 @@ export function FoundationStatus({
             />
           </details>
 
-          <form
-            className="project-form"
-            onSubmit={(event) => void createProject(event)}
-          >
-            <label>
-              新项目名称
-              <input
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-                placeholder="例如：春季品牌片"
+          <details className="new-project-disclosure" open={!selected}>
+            <summary>新建制作项目</summary>
+            <form
+              className="project-form"
+              onSubmit={(event) => void createProject(event)}
+            >
+              <label>
+                新项目名称
+                <input
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.target.value)}
+                  placeholder="例如：春季品牌片"
+                />
+              </label>
+              <label>
+                制作说明（可选）
+                <input
+                  value={projectDescription}
+                  onChange={(event) =>
+                    setProjectDescription(event.target.value)
+                  }
+                  placeholder="目标、受众或交付背景"
+                />
+              </label>
+              <Button
+                label="创建项目"
+                type="submit"
+                disabled={busy || !pilotReady}
+                pending={busy && workspace?.activeOperation === null}
+                pendingLabel="创建中…"
               />
-            </label>
-            <label>
-              制作说明（可选）
-              <input
-                value={projectDescription}
-                onChange={(event) => setProjectDescription(event.target.value)}
-                placeholder="目标、受众或交付背景"
-              />
-            </label>
-            <Button
-              label="创建项目"
-              type="submit"
-              disabled={busy || !pilotReady}
-              pending={busy && workspace?.activeOperation === null}
-              pendingLabel="创建中…"
-            />
-          </form>
+            </form>
+          </details>
 
           {hydrating ? (
             <div className="workspace-loading" role="status">
@@ -1746,42 +1841,85 @@ export function FoundationStatus({
               正在从 API 恢复项目状态…
             </div>
           ) : selected && workspace ? (
-            <WorkspaceStage
-              snapshot={workspace}
-              activeStage={activeStage}
-              sourceFile={sourceFile}
-              busy={busy}
-              rejectReason={rejectReason}
-              rejectNote={rejectNote}
-              reviewSummary={reviewSummary}
-              reviewChanges={reviewChanges}
-              onFileChange={handleFileChange}
-              onUpload={handleUpload}
-              onParse={handleParse}
-              onAccept={handleAccept}
-              onReject={handleReject}
-              onRejectReasonChange={setRejectReason}
-              onRejectNoteChange={setRejectNote}
-              onGenerateConcepts={handleGenerateConcepts}
-              onSelectConcept={handleSelectConcept}
-              onGenerateScript={handleGenerateScript}
-              onGenerateStoryboard={handleGenerateStoryboard}
-              onGenerateShotPlan={handleGenerateShotPlan}
-              onReviewSummaryChange={setReviewSummary}
-              onReviewChangesChange={setReviewChanges}
-              onApprove={() => submitReview("approved")}
-              onRequestChanges={() => submitReview("revision_requested")}
-              onCompleteRevision={handleCompleteRevision}
-              onCancelRevision={handleCancelRevision}
-              onCreateDelivery={handleCreateDelivery}
-              onExportDelivery={handleExportDelivery}
-              onDownload={handleDownload}
-              download={download}
-              onRefresh={refreshSelected}
-              onRetry={retryLastAction}
-              onNewKey={retryWithNewKey}
-              canRetry={lastAction.current !== null}
-            />
+            <>
+              {activeStage === "upload" && !workspace.sourceAsset ? (
+                <>
+                  {workspace.ideaIntake ? (
+                    <div className="stage-card">
+                      <h3>创作想法已整理</h3>
+                      <p>{workspace.ideaIntake.raw_idea}</p>
+                      <Button
+                        label="查看 Brief"
+                        onClick={() => setActiveStage("brief")}
+                      />
+                    </div>
+                  ) : (
+                    <IdeaComposer
+                      key={selected.id}
+                      busy={busy}
+                      onCreate={handleCreateIdea}
+                    />
+                  )}
+                  <details className="upload-alternative">
+                    <summary>或导入已有的 Structured Brief</summary>
+                    <UploadStage
+                      snapshot={workspace}
+                      sourceFile={sourceFile}
+                      busy={busy}
+                      onFileChange={handleFileChange}
+                      onUpload={handleUpload}
+                    />
+                  </details>
+                </>
+              ) : activeStage === "brief" &&
+                workspace.ideaIntake?.status === "structured" &&
+                !workspace.brief ? (
+                <IdeaBriefEditor
+                  key={`${workspace.ideaIntake.id}:${workspace.ideaIntake.version}`}
+                  intake={workspace.ideaIntake}
+                  busy={busy}
+                  onSave={handleSaveIdea}
+                  onConfirm={handleConfirmIdea}
+                />
+              ) : (
+                <WorkspaceStage
+                  snapshot={workspace}
+                  activeStage={activeStage}
+                  sourceFile={sourceFile}
+                  busy={busy}
+                  rejectReason={rejectReason}
+                  rejectNote={rejectNote}
+                  reviewSummary={reviewSummary}
+                  reviewChanges={reviewChanges}
+                  onFileChange={handleFileChange}
+                  onUpload={handleUpload}
+                  onParse={handleParse}
+                  onAccept={handleAccept}
+                  onReject={handleReject}
+                  onRejectReasonChange={setRejectReason}
+                  onRejectNoteChange={setRejectNote}
+                  onGenerateConcepts={handleGenerateConcepts}
+                  onSelectConcept={handleSelectConcept}
+                  onGenerateScript={handleGenerateScript}
+                  onGenerateStoryboard={handleGenerateStoryboard}
+                  onGenerateShotPlan={handleGenerateShotPlan}
+                  onReviewSummaryChange={setReviewSummary}
+                  onReviewChangesChange={setReviewChanges}
+                  onApprove={() => submitReview("approved")}
+                  onRequestChanges={() => submitReview("revision_requested")}
+                  onCompleteRevision={handleCompleteRevision}
+                  onCancelRevision={handleCancelRevision}
+                  onCreateDelivery={handleCreateDelivery}
+                  onExportDelivery={handleExportDelivery}
+                  onDownload={handleDownload}
+                  download={download}
+                  onRefresh={refreshSelected}
+                  onRetry={retryLastAction}
+                  onNewKey={retryWithNewKey}
+                  canRetry={lastAction.current !== null}
+                />
+              )}
+            </>
           ) : (
             <div className="no-project-state">
               <span aria-hidden="true">✦</span>
@@ -1799,26 +1937,13 @@ export function FoundationStatus({
             <>
               <h2>{selected.name}</h2>
               <p>{selected.description || "尚未添加项目说明。"}</p>
-              <dl className="metadata-list">
-                <div>
-                  <dt>项目状态</dt>
-                  <dd>{selected.status}</dd>
-                </div>
-                <div>
-                  <dt>项目版本</dt>
-                  <dd>v{selected.version}</dd>
-                </div>
-                <div>
-                  <dt>当前阶段</dt>
-                  <dd>{stageLabel(activeStage)}</dd>
-                </div>
-                <div>
-                  <dt>已保存 IDs</dt>
-                  <dd>{countArtifactIds(workspace.artifacts)} 个</dd>
-                </div>
-              </dl>
+              <ArtifactLibrary
+                snapshot={workspace}
+                activeStage={activeStage}
+                onSelect={setActiveStage}
+              />
               <section className="next-step">
-                <h3>当前动作</h3>
+                <h3>下一步</h3>
                 <p>{stageDescription(workspace, activeStage)}</p>
                 <button
                   className="button secondary"
@@ -1829,23 +1954,6 @@ export function FoundationStatus({
                   重新读取真实状态
                 </button>
               </section>
-              <details className="artifact-detail">
-                <summary>Artifact ID ledger</summary>
-                <dl className="ledger-list">
-                  {Object.entries(workspace.artifacts).map(([key, value]) => (
-                    <div key={key}>
-                      <dt>{key}</dt>
-                      <dd>
-                        <code>
-                          {Array.isArray(value)
-                            ? value.join(", ")
-                            : String(value)}
-                        </code>
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              </details>
             </>
           ) : (
             <p className="empty-state">
@@ -1873,15 +1981,6 @@ async function sha256File(file: File): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((item) => item.toString(16).padStart(2, "0"))
     .join("");
-}
-
-function countArtifactIds(artifacts: ArtifactIds): number {
-  return Object.values(artifacts).reduce(
-    (count, value) =>
-      count +
-      (Array.isArray(value) ? (value.length > 0 ? 1 : 0) : value ? 1 : 0),
-    0,
-  );
 }
 
 function acceptedArtifactIds(

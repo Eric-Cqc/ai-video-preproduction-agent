@@ -17,3 +17,7 @@ __pycache__/
 !.env.example
 .DS_Store
 .claude/
+.tools/
+.evidence/
+
+.local-db-bootstrap.py

@@ -155,6 +155,104 @@ class ProjectRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
+class IdeaIntakeRecord(Base):
+    __tablename__ = "idea_intakes"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "id",
+            name="uq_idea_intakes_tenant_project_id",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id"],
+            ["projects.organization_id", "projects.workspace_id", "projects.id"],
+            name="fk_idea_intakes_project_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id"],
+            ["briefs.organization_id", "briefs.workspace_id", "briefs.project_id", "briefs.id"],
+            name="fk_idea_intakes_brief_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "workspace_id", "project_id", "brief_id", "brief_version_id"],
+            [
+                "brief_versions.organization_id",
+                "brief_versions.workspace_id",
+                "brief_versions.project_id",
+                "brief_versions.brief_id",
+                "brief_versions.id",
+            ],
+            name="fk_idea_intakes_brief_version_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("length(btrim(raw_idea)) > 0", name="ck_idea_intake_raw_idea"),
+        CheckConstraint(
+            "duration_seconds IS NULL OR duration_seconds BETWEEN 15 AND 60",
+            name="ck_idea_intake_duration",
+        ),
+        CheckConstraint("status IN ('structured', 'confirmed')", name="ck_idea_intake_status"),
+        CheckConstraint(
+            "jsonb_typeof(tone) = 'array' AND jsonb_array_length(tone) <= 10 AND "
+            "jsonb_typeof(key_messages) = 'array' AND jsonb_array_length(key_messages) <= 20 AND "
+            "jsonb_typeof(constraints) = 'array' AND jsonb_array_length(constraints) <= 20 AND "
+            "jsonb_typeof(must_include) = 'array' AND jsonb_array_length(must_include) <= 20 AND "
+            "jsonb_typeof(must_avoid) = 'array' AND jsonb_array_length(must_avoid) <= 20 AND "
+            "jsonb_typeof(assumptions) = 'array' AND jsonb_array_length(assumptions) <= 20 AND "
+            "jsonb_typeof(missing_fields) = 'array' AND jsonb_array_length(missing_fields) <= 3",
+            name="ck_idea_intake_array_bounds",
+        ),
+        CheckConstraint(
+            "(status = 'structured' AND brief_id IS NULL AND brief_version_id IS NULL) OR "
+            "(status = 'confirmed' AND brief_id IS NOT NULL AND brief_version_id IS NOT NULL)",
+            name="ck_idea_intake_confirmation",
+        ),
+        CheckConstraint("version >= 1", name="ck_idea_intake_version"),
+        Index(
+            "ix_idea_intakes_tenant_project",
+            "organization_id",
+            "workspace_id",
+            "project_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    organization_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    workspace_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    raw_idea: Mapped[str] = mapped_column(Text, nullable=False)
+    objective: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    audience: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tone: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    key_messages: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    call_to_action: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    constraints: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    must_include: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    must_avoid: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    assumptions: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    missing_fields: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    brief_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    brief_version_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    created_by_actor_subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+
 class BriefRecord(Base):
     __tablename__ = "briefs"
     __table_args__ = (
@@ -272,7 +370,7 @@ class BriefVersionRecord(Base):
             name="ck_brief_version_lifecycle",
         ),
         CheckConstraint(
-            "source_type IN ('manual', 'imported_structured')",
+            "source_type IN ('manual', 'imported_structured', 'idea_intake')",
             name="ck_brief_version_source_type",
         ),
         CheckConstraint("content_schema_version = '1.0.0'", name="ck_brief_content_schema_version"),
@@ -3213,6 +3311,7 @@ class AuditEventRecord(Base):
             "'brief.created', 'brief.version_created', 'brief.submitted_for_review', "
             "'brief.approved', 'brief.archived', 'brief.issue_created', "
             "'brief.issue_resolved', 'brief.issue_dismissed', 'brief.ingestion_accepted', "
+            "'idea_intake.structured', 'idea_intake.updated', 'idea_intake.confirmed', "
             "'brief_ingestion.source_attached', "
             "'source_asset.created', 'source_asset.version_created', "
             "'source_asset.archived', 'source_object.uploaded', "

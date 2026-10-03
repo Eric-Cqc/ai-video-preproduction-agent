@@ -39,7 +39,7 @@ pythonpath = [".", "packages/contracts/python", "packages/model-registry"]
 [tool.ruff]
 target-version = "py313"
 line-length = 100
-extend-exclude = ["node_modules", ".next"]
+extend-exclude = ["node_modules", ".next", ".tools", ".local-db-bootstrap.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -49,7 +49,7 @@ python_version = "3.13"
 strict = true
 files = ["services", "packages/contracts/python", "packages/model-registry", "tests/integration"]
 mypy_path = ["packages/contracts/python", "packages/model-registry"]
-exclude = ["node_modules", ".next"]
+exclude = ["node_modules", ".next", ".tools", "infra/scripts/stage23_browser_acceptance.py"]
 
 [[tool.mypy.overrides]]
 module = ["jsonschema", "jsonschema.*"]
