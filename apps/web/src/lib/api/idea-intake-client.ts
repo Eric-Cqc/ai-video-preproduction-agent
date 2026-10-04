@@ -99,7 +99,6 @@ export function createIdeaIntakeClient(
         "POST",
         {
           expected_version: intake.version,
-          title: intake.objective ?? "Idea Brief",
         },
       ),
   };

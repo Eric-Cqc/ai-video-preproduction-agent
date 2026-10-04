@@ -90,6 +90,10 @@ export function IdeaBriefEditor({
     (!Number.isInteger(edits.duration_seconds) ||
       edits.duration_seconds < 15 ||
       edits.duration_seconds > 60);
+  const keyMessages = [
+    ...new Set(edits.key_messages.map((item) => item.trim()).filter(Boolean)),
+  ];
+  const invalidKeyMessages = Array.from(keyMessages.join("; ")).length > 1000;
   const dirty = JSON.stringify(edits) !== JSON.stringify(initial);
   const stringFields = [
     ["objective", "核心目标"],
@@ -187,20 +191,22 @@ export function IdeaBriefEditor({
         <Button
           label="保存 Brief 修改"
           onClick={() => onSave(edits)}
-          disabled={busy || !dirty || invalidDuration}
+          disabled={busy || !dirty || invalidDuration || invalidKeyMessages}
         />
         <Button
           label="确认 Brief，进入创意方向"
           onClick={onConfirm}
-          disabled={busy || dirty || invalidDuration}
+          disabled={busy || dirty || invalidDuration || invalidKeyMessages}
         />
       </div>
       <p className="mode-note">
         {invalidDuration
           ? "Structured Brief v1 支持 15–60 秒，请调整时长。"
-          : dirty
-            ? "请先保存修改，再确认当前版本。"
-            : "未填时长时按 30 秒模板保存。确认仅创建 Brief；Concept 选择与批准仍由你完成。"}
+          : invalidKeyMessages
+            ? "关键信息合并后不能超过 1,000 字（含分隔符），请精简后再保存。"
+            : dirty
+              ? "请先保存修改，再确认当前版本。"
+              : "未填时长时按 30 秒模板保存。确认仅创建 Brief；Concept 选择与批准仍由你完成。"}
       </p>
     </section>
   );

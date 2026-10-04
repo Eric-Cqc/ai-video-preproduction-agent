@@ -1,8 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { IdeaBriefEditor } from "../src/components/workbench/idea-intake";
-import type { IdeaIntake } from "../src/lib/api/idea-intake-client";
+import {
+  createIdeaIntakeClient,
+  type IdeaIntake,
+} from "../src/lib/api/idea-intake-client";
 import { nextActionableStage } from "../src/lib/workspace-model";
 import type { WorkspaceSnapshot } from "../src/lib/workspace-model";
 
@@ -29,6 +32,58 @@ const intake: IdeaIntake = {
 };
 
 describe("idea-first human gates", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("lets the server derive a bounded title from a long objective", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}));
+    vi.stubGlobal("fetch", fetcher);
+    const client = createIdeaIntakeClient("http://api.test", {
+      actorSubject: "actor:owner",
+      organizationId: "org-1",
+      workspaceId: "workspace-1",
+    });
+    await client.confirm("project-1", {
+      ...intake,
+      objective: "目".repeat(500),
+    });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      expected_version: 1,
+    });
+  });
+
+  it("blocks key messages that cannot fit the canonical Brief", () => {
+    render(
+      <IdeaBriefEditor
+        intake={intake}
+        busy={false}
+        onSave={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("关键信息（每行一项）"), {
+      target: { value: `${"甲".repeat(500)}\n${"乙".repeat(499)}` },
+    });
+    expect(
+      screen.getByRole("button", { name: "保存 Brief 修改" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "确认 Brief，进入创意方向" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/关键信息合并后不能超过 1,000 字/),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("关键信息（每行一项）"), {
+      target: { value: `${"甲".repeat(500)}\n${"乙".repeat(498)}` },
+    });
+    expect(
+      screen.getByRole("button", { name: "保存 Brief 修改" }),
+    ).toBeEnabled();
+  });
+
   it("requires saving a supported duration before confirming the Brief", () => {
     const save = vi.fn();
     const confirm = vi.fn();
@@ -61,6 +116,25 @@ describe("idea-first human gates", () => {
       screen.getByRole("button", { name: "确认 Brief，进入创意方向" }),
     );
     expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it("counts normalized Unicode key messages like the API", () => {
+    render(
+      <IdeaBriefEditor
+        intake={intake}
+        busy={false}
+        onSave={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("关键信息（每行一项）"), {
+      target: {
+        value: `${"☕".repeat(500)}\n ${"☕".repeat(500)} \n${"🎬".repeat(498)}`,
+      },
+    });
+    expect(
+      screen.getByRole("button", { name: "保存 Brief 修改" }),
+    ).toBeEnabled();
   });
 
   it("resumes a completed idea project at Delivery without inferring a new action", () => {

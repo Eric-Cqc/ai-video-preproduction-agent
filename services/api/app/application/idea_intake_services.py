@@ -494,6 +494,11 @@ def _validated_structured_fields(value: dict[str, object]) -> StructuredIdeaFiel
     else:
         raise InvalidRequest("idea duration is invalid", code="schema_invalid")
     missing_fields = _bounded_string_list(value["missing_fields"], "missing_fields", 3)
+    key_messages = _bounded_string_list(value["key_messages"], "key_messages", 20)
+    if len("; ".join(key_messages)) > 1000:
+        raise InvalidRequest(
+            "key_messages exceed the canonical Brief text limit", code="schema_invalid"
+        )
     return {
         "objective": _nullable_string(value["objective"], "objective", 500),
         "platform": _nullable_string(value["platform"], "platform", 120),
@@ -501,7 +506,7 @@ def _validated_structured_fields(value: dict[str, object]) -> StructuredIdeaFiel
         "duration_seconds": duration_seconds,
         "content_type": _nullable_string(value["content_type"], "content_type", 120),
         "tone": _bounded_string_list(value["tone"], "tone", 10),
-        "key_messages": _bounded_string_list(value["key_messages"], "key_messages", 20),
+        "key_messages": key_messages,
         "call_to_action": _nullable_string(value["call_to_action"], "call_to_action", 500),
         "constraints": _bounded_string_list(value["constraints"], "constraints", 20),
         "must_include": _bounded_string_list(value["must_include"], "must_include", 20),
@@ -533,7 +538,7 @@ def _bounded_string_list(value: object, field: str, max_items: int) -> list[str]
         if not cleaned or len(cleaned) > 500:
             raise InvalidRequest(f"{field} contains an invalid value", code="schema_invalid")
         result.append(cleaned)
-    return result
+    return list(dict.fromkeys(result))
 
 
 def _brief_title(title: str | None, intake: IdeaIntake) -> str:
@@ -549,7 +554,7 @@ def _structured_brief_from_intake(intake: IdeaIntake) -> dict[str, object]:
     audience = intake.audience or "Audience to be confirmed"
     platform = intake.platform or "social"
     content_type = intake.content_type or "social video"
-    key_messages = intake.key_messages or ["Message to be confirmed"]
+    key_messages = list(dict.fromkeys(intake.key_messages)) or ["Message to be confirmed"]
     call_to_action = intake.call_to_action or "Call to action to be confirmed"
     return {
         "schema_version": "1.0.0",
@@ -575,11 +580,11 @@ def _structured_brief_from_intake(intake: IdeaIntake) -> dict[str, object]:
         },
         "brand": {
             "brand_name": None,
-            "tone": intake.tone,
+            "tone": list(dict.fromkeys(intake.tone)),
             "personality": [],
             "visual_guidelines": [],
-            "mandatory_elements": intake.must_include,
-            "prohibited_elements": intake.must_avoid,
+            "mandatory_elements": list(dict.fromkeys(intake.must_include)),
+            "prohibited_elements": list(dict.fromkeys(intake.must_avoid)),
         },
         "channels": [_channel_from_platform(platform)],
         "deliverables": {
@@ -596,9 +601,9 @@ def _structured_brief_from_intake(intake: IdeaIntake) -> dict[str, object]:
             "required_message": "; ".join(key_messages),
             "call_to_action": call_to_action,
             "opening_hook_requirements": [],
-            "narrative_preferences": intake.constraints,
+            "narrative_preferences": list(dict.fromkeys(intake.constraints)),
             "reference_styles": [],
-            "prohibited_themes": intake.must_avoid,
+            "prohibited_themes": list(dict.fromkeys(intake.must_avoid)),
         },
         "production_constraints": {
             "available_assets": [],
@@ -621,7 +626,7 @@ def _structured_brief_from_intake(intake: IdeaIntake) -> dict[str, object]:
             "creative_metrics": [],
             "evaluation_notes": None,
         },
-        "open_questions": intake.missing_fields,
+        "open_questions": list(dict.fromkeys(intake.missing_fields)),
     }
 
 
