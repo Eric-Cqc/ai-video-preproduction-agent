@@ -166,6 +166,15 @@ def test_creative_api_generation_selection_script_replay_and_permissions(
         json={},
     )
     assert denied.status_code == 403
+    selection_path = candidate_path.rsplit("/candidates", 1)[0] + "/selection"
+    assert creative_client.get(selection_path, headers=owner).status_code == 404
+    with database_engine.connect() as connection:
+        audit_before = connection.scalar(text("SELECT count(*) FROM audit_events"))
+        assert connection.scalar(text("SELECT count(*) FROM creative_concept_selections")) == 0
+    assert creative_client.get(selection_path, headers=viewer).status_code == 404
+    with database_engine.connect() as connection:
+        assert connection.scalar(text("SELECT count(*) FROM audit_events")) == audit_before
+        assert connection.scalar(text("SELECT count(*) FROM creative_concept_selections")) == 0
 
     selected = creative_client.post(
         f"{candidate_path}/{candidate_id}/select",
@@ -173,6 +182,13 @@ def test_creative_api_generation_selection_script_replay_and_permissions(
         json={},
     )
     assert selected.status_code == 201, selected.text
+    restored = creative_client.get(selection_path, headers=viewer)
+    assert restored.status_code == 200
+    assert restored.json() == {
+        "selection_id": selected.json()["selection_id"],
+        "candidate_id": candidate_id,
+    }
+    assert creative_client.get(selection_path, headers=removed_headers).status_code == 404
     _app(creative_client).state.creative_application_service.provider = DeterministicFakeProvider(
         ProviderOutcome(
             ProviderOutcomeStatus.SUCCESS, (CREATIVE / "valid-script-v1.json").read_text()

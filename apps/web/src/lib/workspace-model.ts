@@ -1,3 +1,4 @@
+import type { IdeaIntake } from "./api/idea-intake-client";
 import type {
   ApiClientError,
   ArtifactIds,
@@ -44,6 +45,7 @@ export type StageState =
   "done" | "available" | "pending" | "failed" | "blocked";
 
 export interface WorkspaceSnapshot {
+  ideaIntake?: IdeaIntake | undefined;
   project: Project;
   artifacts: ArtifactIds;
   sourceAssets: SourceAsset[];
@@ -171,16 +173,18 @@ export function stageStatus(
 
   switch (stage) {
     case "upload":
+      if (snapshot.ideaIntake) return "done";
       if (uploadFailed) return "failed";
       return uploadDone ? "done" : "available";
     case "parse":
+      if (snapshot.ideaIntake) return "done";
       if (parseFailed) return "failed";
       if (parsePending) return "pending";
       return parseDone ? "done" : uploadDone ? "available" : "blocked";
     case "brief":
       if (briefDone) return "done";
       if (snapshot.candidateReview?.action === "reject") return "failed";
-      return snapshot.candidate
+      return snapshot.candidate || snapshot.ideaIntake
         ? "available"
         : parseFailed
           ? "blocked"
@@ -231,6 +235,8 @@ export function stageDescription(
 ): string {
   switch (stage) {
     case "upload":
+      if (snapshot.ideaIntake)
+        return "创作想法已整理，Brief 与后续产物可从作品目录回看。";
       return snapshot.sourceObject
         ? "源文件已登记并保存。"
         : "登记一个受控的结构化制作输入。";
@@ -301,6 +307,7 @@ export function stageLabel(stage: StageId): string {
 
 export function nextActionableStage(snapshot: WorkspaceSnapshot): StageId {
   const statuses = stageStatuses(snapshot);
+  if (snapshot.ideaIntake && statuses.delivery === "done") return "delivery";
   return (
     stageDefinitions.find((stage) => statuses[stage.id] === "available")?.id ??
     stageDefinitions.find((stage) => statuses[stage.id] === "failed")?.id ??

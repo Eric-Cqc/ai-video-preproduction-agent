@@ -24,6 +24,7 @@ from services.api.app.application.repositories import (
     DeliveryPackageVersionRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
+    IdeaIntakeRepository,
     MembershipRepository,
     OrganizationRepository,
     PlanningReviewRepository,
@@ -66,6 +67,7 @@ from services.api.app.infrastructure.repositories import (
     SqlAlchemyBriefVersionRepository,
     SqlAlchemyDocumentExtractionOperationRepository,
     SqlAlchemyDocumentExtractionRepository,
+    SqlAlchemyIdeaIntakeRepository,
     SqlAlchemyMembershipRepository,
     SqlAlchemyOrganizationRepository,
     SqlAlchemyProjectRepository,
@@ -102,6 +104,7 @@ class SqlAlchemyUnitOfWork:
     workspaces: WorkspaceRepository
     memberships: MembershipRepository
     projects: ProjectRepository
+    idea_intakes: IdeaIntakeRepository
     briefs: BriefRepository
     brief_ingestions: BriefIngestionRepository
     brief_ingestion_source_assets: BriefIngestionSourceAssetRepository
@@ -150,6 +153,7 @@ class SqlAlchemyUnitOfWork:
         self.workspaces = SqlAlchemyWorkspaceRepository(self.session)
         self.memberships = SqlAlchemyMembershipRepository(self.session)
         self.projects = SqlAlchemyProjectRepository(self.session)
+        self.idea_intakes = SqlAlchemyIdeaIntakeRepository(self.session)
         self.briefs = SqlAlchemyBriefRepository(self.session)
         self.brief_ingestions = SqlAlchemyBriefIngestionRepository(self.session)
         self.brief_ingestion_source_assets = SqlAlchemyBriefIngestionSourceAssetRepository(

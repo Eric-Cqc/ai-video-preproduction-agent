@@ -19,7 +19,8 @@ describe("FoundationStatus", () => {
     expect(
       screen.getByRole("heading", { name: "Production Desk" }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/本地 API 已连接/)).toBeInTheDocument();
+    expect(screen.getByText("本地开发模式 · API 已连接")).toBeInTheDocument();
+    expect(screen.queryByText(/离线规则模式/)).not.toBeInTheDocument();
     expect(screen.getByText("制作项目")).toBeInTheDocument();
   });
 

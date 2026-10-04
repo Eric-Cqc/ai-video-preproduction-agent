@@ -556,7 +556,7 @@ describe("Stage-20 workspace behavior", () => {
       ),
     );
 
-    expect(screen.getByRole("heading", { name: "Upload" })).toBeInTheDocument();
+    expect(screen.getByLabelText("创作想法")).toBeInTheDocument();
     expect(screen.queryByText(/候选已载入 Brief 阶段/)).not.toBeInTheDocument();
     expect(screen.getByText(/已恢复「Beta」/)).toBeInTheDocument();
   });
@@ -643,7 +643,7 @@ describe("Stage-20 workspace behavior", () => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       const method =
         init?.method ?? (input instanceof Request ? input.method : "GET");
-      if (method !== "GET") {
+      if (method !== "GET" || url.pathname.endsWith("/selection")) {
         return Response.json(
           {
             error: {
@@ -709,7 +709,7 @@ describe("Stage-20 workspace behavior", () => {
     expect(storedResume.conceptSelection).toBeUndefined();
   });
 
-  it("revalidates a persisted Concept selection with its original operation key", async () => {
+  it("revalidates a persisted Concept selection by read only without replaying a mutation", async () => {
     const mutations: Array<{ path: string; key: string | null }> = [];
     window.localStorage.setItem(
       artifactStorageKey(context, "project-a"),
@@ -740,6 +740,11 @@ describe("Stage-20 workspace behavior", () => {
           replayed: true,
         });
       }
+      if (url.pathname.endsWith("/selection"))
+        return Response.json({
+          selection_id: "selection-1",
+          candidate_id: "candidate-1",
+        });
       if (url.pathname.endsWith("/projects"))
         return Response.json({ items: projects });
       if (url.pathname.endsWith("/concept-runs/concept-run-1")) {
@@ -772,11 +777,12 @@ describe("Stage-20 workspace behavior", () => {
     fireEvent.click(screen.getByRole("button", { name: /Alpha/ }));
     await screen.findByText(/已恢复「Alpha」/);
 
-    expect(mutations).toEqual([
-      {
-        path: "/api/v1/organizations/org-1/workspaces/workspace-1/projects/project-a/concept-runs/concept-run-1/candidates/candidate-1/select",
-        key: "stable-selection-key",
-      },
-    ]);
+    expect(mutations).toEqual([]);
+    const verified = JSON.parse(
+      window.localStorage.getItem(artifactStorageKey(context, "project-a")) ??
+        "{}",
+    );
+    expect(verified.selectedConceptCandidateId).toBe("candidate-1");
+    expect(verified.conceptSelectionId).toBe("selection-1");
   });
 });
