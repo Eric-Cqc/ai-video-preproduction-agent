@@ -1,8 +1,47 @@
-# AI Video Preproduction Agent
+# AI Video Preproduction Agent · 视频前期制作工作台
+
+[![GitHub stars](https://img.shields.io/github/stars/Eric-Cqc/ai-video-preproduction-agent?style=flat)](https://github.com/Eric-Cqc/ai-video-preproduction-agent/stargazers) · [反馈问题](https://github.com/Eric-Cqc/ai-video-preproduction-agent/issues/new/choose) · [查看全部作品](https://github.com/Eric-Cqc)
+
+**把一份创意需求，整理成经过人工选择、审核和版本管理的制作蓝图。**
+
+面向品牌与内容团队中的策划、制片和创意负责人。项目聚焦视频开拍前的协作：把需求、创意、脚本、分镜和镜头计划连接起来，让每次修改及最终交付都有明确依据。
+
+[查看中文产品案例](https://eric-cqc.github.io/ai-product-portfolio/projects/ai-video-preproduction) · [观看早期版本演示视频](https://eric-cqc.github.io/ai-product-portfolio/assets/demo.mp4) · [本地运行指南](docs/release/LOCAL_QUICKSTART.md)
+
+![新版工作台：八个制作阶段与可追溯交付包](docs/release/idea-first-delivery.png)
+
+## 一次完整使用过程
+
+以品牌短片策划为例：输入创作想法（或导入已有素材），补全并确认需求简报；比较三个创意方向并选中一个；逐步形成脚本、分镜与镜头计划；审阅修改后，导出与批准版本一致的 JSON、CSV 和 ZIP 制作包。
+
+```text
+创意输入 / 素材导入 → 需求简报 → 三个创意方向 → 人工选择 → 脚本 / 分镜 / 镜头计划
+         → 审阅与版本修订 → 批准交付包 → ZIP 导出
+```
+
+| 产品选择         | 解决的问题                               |
+| ---------------- | ---------------------------------------- |
+| 关键节点由人确认 | 生成的候选不会未经选择就变成正式制作方案 |
+| 修改产生后继版本 | 返工保留历史，便于查明决定和变更来源     |
+| 交付绑定批准版本 | 导出包不会混用不同轮次的脚本和镜头计划   |
+
+**我的工作：** 产品定义、流程与边界设计、智能体架构、评测设计及交互验收。技术实现采用 FastAPI、Next.js 与 PostgreSQL；详细设计与验证入口见下文。
+
+## 当前公开状态
+
+- **默认分支：** 本地 Release Candidate，使用确定性离线 Provider 跑通制作规划与交付路径。它输出前期制作材料，不生成、剪辑或发布成片。
+- **可选私有试点：** 服务器端模型接入的范围由 ADR-064 / ADR-066 约束；默认、测试与 CI 仍使用离线 Provider。代码中的试点能力不代表公开在线服务或生产上线。
+- **新版工作台：** 支持创意输入、Brief 草稿编辑与恢复、作品目录和完整制作交付。变更记录见 [PR #15](https://github.com/Eric-Cqc/ai-video-preproduction-agent/pull/15)，本次验收见 [2026-10-18 验证记录](docs/release/VERIFICATION_2026-10-18.md)。
+
+页面截图和案例用于说明产品交互；复现默认分支请按本仓库运行指南。产品边界见 [FOUNDATION.md](FOUNDATION.md)，设计记录见 [ADR](docs/adr/)。
+
+## Technical overview
 
 This repository contains a local release candidate for an **AI video preproduction system**. It provides a real interactive, tenant-aware Golden Path from canonical source upload through deterministic offline planning, explicit human gates, immutable delivery package, and verified ZIP download. The Local RC makes no real model call and does not perform OCR, fetch external URLs, render, publish, or deliver video.
 
 ## Current capabilities
+
+- Idea-first intake with editable assumptions, explicit Brief confirmation, recoverable drafts and a living artifact directory.
 
 - Next.js stage-aware Production Desk with readable planning artifacts, visible lineage, and explicit human actions at each decision boundary, plus the canonical cross-language health contract.
 - FastAPI health plus Organization, Workspace, Membership, Project and versioned Brief foundation endpoints.
@@ -305,3 +344,9 @@ through ADR-063. The implementation plan is
 [review-revision-delivery-plan.md](docs/development/plans/review-revision-delivery-plan.md).
 The workflow remains offline-only and does not introduce real providers,
 network access, media generation, queues, UI or Stage 14 scope.
+
+## 使用、反馈与关注
+
+如果这个项目对你有帮助，欢迎点击仓库右上角 **Star**；想跟进版本更新，可用 **Watch → Custom → Releases**。遇到问题请提交复现步骤、预期与实际结果；也欢迎分享希望解决的业务问题。请只使用合成或已脱敏示例，不提交密钥、个人信息或真实客户资料。
+
+查看 [参与说明](CONTRIBUTING.md)。

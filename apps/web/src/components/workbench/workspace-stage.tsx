@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import {
-  stageDefinitions,
+  visibleStages,
   stageDescription,
   stageStatuses,
   stateLabel,
@@ -42,9 +42,8 @@ export function WorkspaceStage({
   canRetry: boolean;
 }) {
   const state = stageStatuses(stageProps.snapshot)[activeStage];
-  const stage =
-    stageDefinitions.find((item) => item.id === activeStage) ??
-    stageDefinitions[0];
+  const stages = visibleStages(Boolean(stageProps.snapshot.ideaIntake));
+  const stage = stages.find((item) => item.id === activeStage) ?? stages[0]!;
 
   const stageContent = {
     upload: <UploadStage {...stageProps} />,
@@ -70,8 +69,7 @@ export function WorkspaceStage({
         </div>
         <div className="stage-heading-status">
           <span className="stage-progress">
-            Stage {stage.index} /{" "}
-            {String(stageDefinitions.length).padStart(2, "0")}
+            Stage {stage.index} / {String(stages.length).padStart(2, "0")}
           </span>
           <span className={statusClass(state)}>{stateLabel(state)}</span>
         </div>

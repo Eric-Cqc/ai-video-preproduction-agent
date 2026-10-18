@@ -40,6 +40,16 @@ export const stageDefinitions = [
   { id: "delivery", label: "Delivery", index: "09", eyebrow: "Handoff" },
 ] as const;
 
+export function visibleStages(ideaFirst: boolean) {
+  return stageDefinitions
+    .filter((stage) => !ideaFirst || stage.id !== "parse")
+    .map((stage, index) => ({
+      ...stage,
+      label: ideaFirst && stage.id === "upload" ? "Idea" : stage.label,
+      index: String(index + 1).padStart(2, "0"),
+    }));
+}
+
 export type StageId = (typeof stageDefinitions)[number]["id"];
 export type StageState =
   "done" | "available" | "pending" | "failed" | "blocked";
@@ -285,6 +295,9 @@ export function stageDescription(
       }
       return "检查完整制作蓝图，然后批准或请求修改。";
     case "delivery":
+      if (snapshot.exports.some((item) => item.checksum.trim().length > 0)) {
+        return "ZIP 已生成，可下载并按校验值核对交付包。";
+      }
       return snapshot.deliveryPackage
         ? "交付包已创建；ZIP 仍需制作人明确生成和下载。"
         : "仅在精确的已批准规划包之后创建交付包。";

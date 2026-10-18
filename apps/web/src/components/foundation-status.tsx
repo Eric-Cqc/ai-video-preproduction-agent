@@ -36,7 +36,7 @@ import {
   fromHydratedProject,
   latestReview,
   nextActionableStage,
-  stageDefinitions,
+  visibleStages,
   stageDescription,
   stageLabel,
   stageStatuses,
@@ -64,7 +64,9 @@ type DeskError = ApiClientError | Error;
 type ProjectIdentity = Pick<
   LocalWorkspaceContext,
   "organizationId" | "workspaceId"
-> & { projectId: string };
+> & {
+  projectId: string;
+};
 type WorkspacePatch = (
   patch: (current: WorkspaceSnapshot) => WorkspaceSnapshot,
 ) => void;
@@ -146,15 +148,7 @@ function StageRail({
 }) {
   const statuses = snapshot ? stageStatuses(snapshot) : undefined;
   const [isExpanded, setIsExpanded] = useState(false);
-  const stages = snapshot?.ideaIntake
-    ? stageDefinitions
-        .filter((stage) => stage.id !== "parse")
-        .map((stage, index) => ({
-          ...stage,
-          label: stage.id === "upload" ? "Idea" : stage.label,
-          index: String(index + 1).padStart(2, "0"),
-        }))
-    : stageDefinitions;
+  const stages = visibleStages(Boolean(snapshot?.ideaIntake));
   const activeStageDefinition = stages.find(
     (stage) => stage.id === activeStage,
   );
@@ -225,7 +219,9 @@ function ContextForm({
   return (
     <details className="context-panel">
       <summary>本地工作区设置</summary>
-      <p>仅用于本机开发环境；不会保存凭据，也不会连接外部 Provider。</p>
+      <p>
+        仅用于本机开发环境；模型处理由服务端配置决定。使用在线模型时，输入内容会发送给该服务。
+      </p>
       <div className="context-fields">
         {(
           [
@@ -822,7 +818,9 @@ export function FoundationStatus({
       operationKeys.current.delete(scope);
       lastAction.current = null;
       applyWorkspace((current) => ({ ...current, activeOperation: null }));
-      setNotice(`${stageLabel(stage)} 已完成当前动作。`);
+      setNotice(
+        `${detail === "idea" ? "Idea" : stageLabel(stage)} 已完成当前动作。`,
+      );
     } catch (caught) {
       if (!isCurrent()) return;
       const nextError = errorFor(caught);
