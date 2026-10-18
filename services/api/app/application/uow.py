@@ -23,6 +23,7 @@ from services.api.app.application.repositories import (
     DeliveryPackageVersionRepository,
     DocumentExtractionOperationRepository,
     DocumentExtractionRepository,
+    IdeaIntakeRepository,
     MembershipRepository,
     OrganizationRepository,
     PlanningReviewRepository,
@@ -51,6 +52,7 @@ class UnitOfWork(Protocol):
     workspaces: WorkspaceRepository
     memberships: MembershipRepository
     projects: ProjectRepository
+    idea_intakes: IdeaIntakeRepository
     briefs: BriefRepository
     brief_ingestions: BriefIngestionRepository
     brief_ingestion_source_assets: BriefIngestionSourceAssetRepository

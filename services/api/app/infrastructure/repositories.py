@@ -35,6 +35,8 @@ from services.api.app.domain import (
     DocumentExtractionOperation,
     DocumentExtractionOperationStatus,
     DocumentExtractionStatus,
+    IdeaIntake,
+    IdeaIntakeStatus,
     Membership,
     MembershipRole,
     MembershipStatus,
@@ -75,6 +77,7 @@ from services.api.app.infrastructure.models import (
     BriefVersionRecord,
     DocumentExtractionOperationRecord,
     DocumentExtractionRecord,
+    IdeaIntakeRecord,
     MembershipRecord,
     OrganizationRecord,
     ProjectRecord,
@@ -281,6 +284,137 @@ class SqlAlchemyProjectRepository:
         return select(ProjectRecord).where(
             ProjectRecord.organization_id == organization_id,
             ProjectRecord.workspace_id == workspace_id,
+        )
+
+
+class SqlAlchemyIdeaIntakeRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, intake: IdeaIntake) -> IdeaIntake:
+        record = IdeaIntakeRecord(
+            id=intake.id,
+            organization_id=intake.organization_id,
+            workspace_id=intake.workspace_id,
+            project_id=intake.project_id,
+            raw_idea=intake.raw_idea,
+            objective=intake.objective,
+            platform=intake.platform,
+            audience=intake.audience,
+            duration_seconds=intake.duration_seconds,
+            content_type=intake.content_type,
+            tone=intake.tone,
+            key_messages=intake.key_messages,
+            call_to_action=intake.call_to_action,
+            constraints=intake.constraints,
+            must_include=intake.must_include,
+            must_avoid=intake.must_avoid,
+            assumptions=intake.assumptions,
+            missing_fields=intake.missing_fields,
+            status=intake.status.value,
+            brief_id=intake.brief_id,
+            brief_version_id=intake.brief_version_id,
+            created_by_actor_subject=intake.created_by_actor_subject,
+            created_at=intake.created_at,
+            updated_at=intake.updated_at,
+            version=intake.version,
+        )
+        self.session.add(record)
+        _flush_or_conflict(self.session, "idea_intake_conflict", "idea intake is invalid")
+        return _idea_intake(record)
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, intake_id: UUID
+    ) -> IdeaIntake | None:
+        record = self.session.scalar(
+            self._scoped_query(organization_id, workspace_id, project_id).where(
+                IdeaIntakeRecord.id == intake_id
+            )
+        )
+        return _idea_intake(record) if record is not None else None
+
+    def list(self, organization_id: UUID, workspace_id: UUID, project_id: UUID) -> list[IdeaIntake]:
+        records = self.session.scalars(
+            self._scoped_query(organization_id, workspace_id, project_id).order_by(
+                IdeaIntakeRecord.created_at, IdeaIntakeRecord.id
+            )
+        ).all()
+        return [_idea_intake(record) for record in records]
+
+    def update(self, intake: IdeaIntake, *, expected_version: int) -> IdeaIntake:
+        record = self.session.scalar(
+            update(IdeaIntakeRecord)
+            .where(
+                IdeaIntakeRecord.organization_id == intake.organization_id,
+                IdeaIntakeRecord.workspace_id == intake.workspace_id,
+                IdeaIntakeRecord.project_id == intake.project_id,
+                IdeaIntakeRecord.id == intake.id,
+                IdeaIntakeRecord.status == IdeaIntakeStatus.STRUCTURED.value,
+                IdeaIntakeRecord.version == expected_version,
+            )
+            .values(
+                objective=intake.objective,
+                platform=intake.platform,
+                audience=intake.audience,
+                duration_seconds=intake.duration_seconds,
+                content_type=intake.content_type,
+                tone=intake.tone,
+                key_messages=intake.key_messages,
+                call_to_action=intake.call_to_action,
+                constraints=intake.constraints,
+                must_include=intake.must_include,
+                must_avoid=intake.must_avoid,
+                assumptions=intake.assumptions,
+                missing_fields=intake.missing_fields,
+                updated_at=intake.updated_at,
+                version=intake.version,
+            )
+            .returning(IdeaIntakeRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("idea intake version or status changed before update")
+        return _idea_intake(record)
+
+    def confirm(
+        self,
+        intake: IdeaIntake,
+        *,
+        expected_version: int,
+        expected_status: IdeaIntakeStatus,
+    ) -> IdeaIntake:
+        record = self.session.scalar(
+            update(IdeaIntakeRecord)
+            .where(
+                IdeaIntakeRecord.organization_id == intake.organization_id,
+                IdeaIntakeRecord.workspace_id == intake.workspace_id,
+                IdeaIntakeRecord.project_id == intake.project_id,
+                IdeaIntakeRecord.id == intake.id,
+                IdeaIntakeRecord.status == expected_status.value,
+                IdeaIntakeRecord.version == expected_version,
+            )
+            .values(
+                status=intake.status.value,
+                brief_id=intake.brief_id,
+                brief_version_id=intake.brief_version_id,
+                updated_at=intake.updated_at,
+                version=intake.version,
+            )
+            .returning(IdeaIntakeRecord)
+            .execution_options(synchronize_session=False)
+        )
+        if record is None:
+            raise VersionConflict("idea intake version or status changed before confirmation")
+        return _idea_intake(record)
+
+    @staticmethod
+    def _scoped_query(
+        organization_id: UUID, workspace_id: UUID, project_id: UUID
+    ) -> Select[tuple[IdeaIntakeRecord]]:
+        return select(IdeaIntakeRecord).where(
+            IdeaIntakeRecord.organization_id == organization_id,
+            IdeaIntakeRecord.workspace_id == workspace_id,
+            IdeaIntakeRecord.project_id == project_id,
         )
 
 
@@ -1863,6 +1997,42 @@ def _project(record: ProjectRecord) -> Project:
         updated_at=record.updated_at,
         version=record.version,
     )
+
+
+def _idea_intake(record: IdeaIntakeRecord) -> IdeaIntake:
+    return IdeaIntake(
+        id=record.id,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        project_id=record.project_id,
+        raw_idea=record.raw_idea,
+        objective=record.objective,
+        platform=record.platform,
+        audience=record.audience,
+        duration_seconds=record.duration_seconds,
+        content_type=record.content_type,
+        tone=_string_list(record.tone),
+        key_messages=_string_list(record.key_messages),
+        call_to_action=record.call_to_action,
+        constraints=_string_list(record.constraints),
+        must_include=_string_list(record.must_include),
+        must_avoid=_string_list(record.must_avoid),
+        assumptions=_string_list(record.assumptions),
+        missing_fields=_string_list(record.missing_fields),
+        status=IdeaIntakeStatus(record.status),
+        brief_id=record.brief_id,
+        brief_version_id=record.brief_version_id,
+        created_by_actor_subject=record.created_by_actor_subject,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        version=record.version,
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError("database JSON value is not a string array")
+    return [item for item in value]
 
 
 def _brief(record: BriefRecord) -> Brief:

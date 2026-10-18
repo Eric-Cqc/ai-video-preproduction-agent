@@ -3,6 +3,8 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  experimental: { cpus: 2 },
+  devIndicators: false,
   transpilePackages: ["@foundation/contracts"],
   async headers() {
     return [

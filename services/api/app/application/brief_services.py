@@ -75,6 +75,8 @@ class BriefApplicationService:
         source_reference: str | None,
         change_summary: str,
     ) -> BriefBundle:
+        if source_type is BriefSourceType.IDEA_INTAKE:
+            raise InvalidRequest("idea_intake source_type is reserved")
         self._validate_content(structured_content)
         self._validate_source_reference(source_reference)
         now = self.clock()
@@ -238,6 +240,8 @@ class BriefApplicationService:
         source_reference: str | None,
         change_summary: str,
     ) -> BriefBundle:
+        if source_type is BriefSourceType.IDEA_INTAKE:
+            raise InvalidRequest("idea_intake source_type is reserved")
         self._validate_content(structured_content)
         self._validate_source_reference(source_reference)
         now = self.clock()

@@ -98,6 +98,16 @@ def list_candidates(
     }
 
 
+@router.get(
+    "/organizations/{organization_id}/workspaces/{workspace_id}/projects/{project_id}/concept-runs/{concept_run_id}/selection"
+)
+def get_selection(
+    project_id: UUID, concept_run_id: UUID, context: Tenant, service: Service
+) -> dict[str, object]:
+    selection = service.get_selection(context, project_id, concept_run_id)
+    return {"selection_id": selection.id, "candidate_id": selection.concept_candidate_id}
+
+
 @router.post(
     "/organizations/{organization_id}/workspaces/{workspace_id}/projects/{project_id}/concept-runs/{concept_run_id}/candidates/{candidate_id}/select",
     status_code=201,

@@ -59,6 +59,10 @@ from services.api.app.domain.errors import (
     InvalidSourceAssetMutation,
     VersionConflict,
 )
+from services.api.app.domain.idea_intake import (
+    IdeaIntake,
+    IdeaIntakeStatus,
+)
 from services.api.app.domain.ingestion import (
     BriefIngestion,
     BriefIngestionOperation,
@@ -122,6 +126,8 @@ __all__ = [
     "BriefStatus",
     "BriefVersion",
     "BriefVersionLifecycle",
+    "IdeaIntake",
+    "IdeaIntakeStatus",
     "BriefIngestion",
     "BriefIngestionOperation",
     "BriefIngestionSourceAsset",

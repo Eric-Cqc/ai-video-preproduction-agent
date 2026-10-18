@@ -27,6 +27,7 @@ from services.api.app.application.errors import (
     StorageUnavailable,
     TemporaryIdentityDisabled,
 )
+from services.api.app.application.idea_intake_services import IdeaIntakeApplicationService
 from services.api.app.application.ingestion_services import BriefIngestionApplicationService
 from services.api.app.application.model_provider import (
     DeepSeekProvider,
@@ -72,6 +73,7 @@ from services.api.app.presentation.creative_routes import router as creative_rou
 from services.api.app.presentation.document_extraction_routes import (
     router as document_extraction_router,
 )
+from services.api.app.presentation.idea_intake_routes import router as idea_intake_router
 from services.api.app.presentation.ingestion_routes import router as ingestion_router
 from services.api.app.presentation.pilot_access_routes import router as pilot_access_router
 from services.api.app.presentation.review_revision_delivery_routes import (
@@ -160,6 +162,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.state.brief_extraction_service = StructuredBriefExtractionService(
         lambda: SqlAlchemyUnitOfWork(session_factory), workflow_provider
     )
+    app.state.idea_intake_service = IdeaIntakeApplicationService(
+        lambda: SqlAlchemyUnitOfWork(session_factory), workflow_provider
+    )
     app.state.creative_application_service = CreativeApplicationService(
         lambda: SqlAlchemyUnitOfWork(session_factory),
         workflow_provider,
@@ -212,6 +217,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     app.include_router(tenant_router)
     app.include_router(brief_router)
     app.include_router(brief_extraction_router)
+    app.include_router(idea_intake_router)
     app.include_router(candidate_review_router)
     app.include_router(creative_router)
     app.include_router(ingestion_router)

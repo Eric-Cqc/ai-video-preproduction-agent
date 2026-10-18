@@ -28,6 +28,8 @@ from services.api.app.domain import (
     DeliveryPackageVersion,
     DocumentExtraction,
     DocumentExtractionOperation,
+    IdeaIntake,
+    IdeaIntakeStatus,
     Membership,
     Organization,
     PlanningReview,
@@ -93,6 +95,28 @@ class ProjectRepository(Protocol):
     def list(self, organization_id: UUID, workspace_id: UUID) -> list[Project]: ...
 
     def update(self, project: Project, *, expected_version: int) -> Project: ...
+
+
+class IdeaIntakeRepository(Protocol):
+    def add(self, intake: IdeaIntake) -> IdeaIntake: ...
+
+    def get(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID, intake_id: UUID
+    ) -> IdeaIntake | None: ...
+
+    def list(
+        self, organization_id: UUID, workspace_id: UUID, project_id: UUID
+    ) -> list[IdeaIntake]: ...
+
+    def update(self, intake: IdeaIntake, *, expected_version: int) -> IdeaIntake: ...
+
+    def confirm(
+        self,
+        intake: IdeaIntake,
+        *,
+        expected_version: int,
+        expected_status: IdeaIntakeStatus,
+    ) -> IdeaIntake: ...
 
 
 class BriefRepository(Protocol):

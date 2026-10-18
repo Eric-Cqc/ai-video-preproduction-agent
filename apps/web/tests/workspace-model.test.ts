@@ -4,8 +4,10 @@ import type { WorkspaceSnapshot } from "../src/lib/workspace-model";
 import {
   nextActionableStage,
   stageStatus,
+  stageDescription,
   stageStatuses,
   withWorkspacePatch,
+  visibleStages,
 } from "../src/lib/workspace-model";
 
 function baseSnapshot(): WorkspaceSnapshot {
@@ -201,4 +203,33 @@ describe("workspace stage state machine", () => {
       delivery: "blocked",
     });
   });
+});
+
+describe("visible production stages", () => {
+  it("uses eight consecutive stages for idea intake and retains nine for import", () => {
+    const idea = visibleStages(true);
+    expect(idea.map((stage) => stage.index)).toEqual([
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+      "07",
+      "08",
+    ]);
+    expect(idea[0]?.label).toBe("Idea");
+    expect(idea.find((stage) => stage.id === "concepts")?.index).toBe("03");
+    expect(idea.some((stage) => stage.id === "parse")).toBe(false);
+    expect(visibleStages(false)).toHaveLength(9);
+    expect(visibleStages(false)[0]?.label).toBe("Upload");
+  });
+});
+
+it("distinguishes an exported ZIP from a package awaiting export", () => {
+  const snapshot = baseSnapshot();
+  snapshot.exports = [
+    { checksum: "verified-digest" } as WorkspaceSnapshot["exports"][number],
+  ];
+  expect(stageDescription(snapshot, "delivery")).toContain("ZIP 已生成");
 });

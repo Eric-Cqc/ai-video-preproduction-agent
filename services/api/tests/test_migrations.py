@@ -18,7 +18,12 @@ def test_delivery_operation_failure_metadata_matches_revision_completion_migrati
     expected = {
         "ck_delivery_operation_status": cast(str, migration.__dict__["_NEW_STATUS"]),
         "ck_delivery_operation_outcome": cast(str, migration.__dict__["_NEW_OUTCOME"]),
-        "ck_audit_action": cast(str, migration.__dict__["_NEW_AUDIT"]),
+        "ck_audit_action": cast(
+            str,
+            import_module("infra.migrations.versions.b4c5d6e7f8a9_create_idea_intakes").__dict__[
+                "_NEW_AUDIT"
+            ],
+        ),
     }
     tables = (
         cast(Table, DeliveryOperationRecord.__table__),
@@ -73,8 +78,9 @@ def test_database_schema_is_at_expected_migration_head(database_engine: Engine) 
                 )
             )
         )
-    assert revision == "a2b3c4d5e6f7"
+    assert revision == "b6c7d8e9f0a1"
     assert tables == {
+        "idea_intakes",
         "organizations",
         "workspaces",
         "memberships",
