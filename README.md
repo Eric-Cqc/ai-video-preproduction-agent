@@ -1,4 +1,39 @@
-# AI Video Preproduction Agent
+# AI Video Preproduction Agent · 视频前期制作工作台
+
+**把一份创意需求，整理成经过人工选择、审核和版本管理的制作蓝图。**
+
+面向品牌与内容团队中的策划、制片和创意负责人。项目聚焦视频开拍前的协作：把需求、创意、脚本、分镜和镜头计划连接起来，让每次修改及最终交付都有明确依据。
+
+[查看中文产品案例](https://eric-cqc.github.io/ai-product-portfolio/projects/ai-video-preproduction) · [观看演示视频](https://eric-cqc.github.io/ai-product-portfolio/assets/demo.mp4) · [本地运行指南](docs/release/LOCAL_QUICKSTART.md)
+
+![需求简报审阅界面：原始需求与结构化候选并列](https://eric-cqc.github.io/ai-product-portfolio/assets/projects-v3/ai-video/01-brief-review.png)
+
+## 一次完整使用过程
+
+以品牌短片策划为例：上传文字素材，检查提取出的需求简报；比较三个创意方向并选中一个；逐步形成脚本、分镜与镜头计划；审阅修改后，导出与批准版本一致的 JSON、CSV 和 ZIP 制作包。
+
+```text
+素材上传 → 需求简报 → 三个创意方向 → 人工选择 → 脚本 / 分镜 / 镜头计划
+         → 审阅与版本修订 → 批准交付包 → ZIP 导出
+```
+
+| 产品选择 | 解决的问题 |
+| --- | --- |
+| 关键节点由人确认 | 生成的候选不会未经选择就变成正式制作方案 |
+| 修改产生后继版本 | 返工保留历史，便于查明决定和变更来源 |
+| 交付绑定批准版本 | 导出包不会混用不同轮次的脚本和镜头计划 |
+
+**我的工作：** 产品定义、流程与边界设计、智能体架构、评测设计及交互验收。技术实现采用 FastAPI、Next.js 与 PostgreSQL；详细设计与验证入口见下文。
+
+## 当前公开状态
+
+- **默认分支：** 本地 Release Candidate，使用确定性离线 Provider 跑通制作规划与交付路径。它输出前期制作材料，不生成、剪辑或发布成片。
+- **可选私有试点：** 服务器端模型接入的范围由 ADR-064 / ADR-066 约束；默认、测试与 CI 仍使用离线 Provider。代码中的试点能力不代表公开在线服务或生产上线。
+- **近期增量：** [PR #15：从创意输入开始的工作台与可恢复流程](https://github.com/Eric-Cqc/ai-video-preproduction-agent/pull/15) 已公开，仍为未合并草稿。其 CI 结果属于该分支，不能当作默认分支已具备全部新能力的证明。
+
+页面截图和案例用于说明产品交互；复现默认分支请按本仓库运行指南。产品边界见 [FOUNDATION.md](FOUNDATION.md)，设计记录见 [ADR](docs/adr/)。
+
+## Technical overview
 
 This repository contains a local release candidate for an **AI video preproduction system**. It provides a real interactive, tenant-aware Golden Path from canonical source upload through deterministic offline planning, explicit human gates, immutable delivery package, and verified ZIP download. The Local RC makes no real model call and does not perform OCR, fetch external URLs, render, publish, or deliver video.
 
